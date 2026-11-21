@@ -1,0 +1,7 @@
+- [Continuum reference fidelity](continuum-reference.md) — match the supplied Runway screenshots and use real Wikipedia content, not rewritten sample articles.
+- [Wikipedia reader scope](wikipedia-reader-scope.md) — English-only reading is intentional; foreign-language links must not silently load an English namesake.
+- [Resource-scale evidence rules](resource-scale-evidence.md) — keep studies sandbox-only until approved; unknown accounting boundaries must prevent unsupported comparisons.
+- [DOM numeric precision](dom-test-precision.md) — CSS percentages lose precision during serialization; test exact conversion output separately from icon geometry.
+- [Accessible closable tabs](accessible-tabs.md) — generic wrappers do not exclude close buttons from tablist ownership; keep tab semantics valid during animated removal.
+- [Software WebGL verification](software-webgl-verification.md) — use camera state for gestures; repeated full-resolution PNG polling can time out despite visible rotation.
+- [App Storage SDK compatibility](app-storage-sdk.md) — newer Google SDK majors rejected the documented empty project ID; compatible majors worked without extra credentials.

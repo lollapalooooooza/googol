@@ -1,0 +1,33 @@
+.mars-viewer{background:radial-gradient(ellipse at 50% 45%,#efe2cf 0%,#f3ece0 55%,#f4efe5 100%)}
+.exhibit-chrome{transition:opacity .22s ease}
+.exhibit-chrome.is-hidden{opacity:0;pointer-events:none}
+.exhibit-chrome.is-hidden *{pointer-events:none!important}
+.mars-skeleton{width:min(46vmin,280px);aspect-ratio:1;border-radius:50%;background:radial-gradient(circle at 62% 40%,#e3b597,#c98a68 55%,#8f5a45);opacity:.35;animation:mars-pulse 1.6s ease-in-out infinite}
+@keyframes mars-pulse{0%,100%{opacity:.22;transform:scale(.98)}50%{opacity:.42;transform:scale(1)}}
+.video-viewer{background:transparent;outline:none}
+.video-viewer:focus-visible .vv-dock{box-shadow:0 0 0 2px #2f6f6d,0 10px 30px -14px rgba(40,30,20,.35)}
+.vv-media{border-radius:22px;overflow:hidden;--fx:linear-gradient(to right,transparent 0%,rgba(0,0,0,.18) 4%,rgba(0,0,0,.55) 9%,rgba(0,0,0,.88) 14%,#000 19%,#000 81%,rgba(0,0,0,.88) 86%,rgba(0,0,0,.55) 91%,rgba(0,0,0,.18) 96%,transparent 100%);--fy:linear-gradient(to bottom,transparent 0%,rgba(0,0,0,.25) 3%,rgba(0,0,0,.7) 7%,#000 11%,#000 89%,rgba(0,0,0,.7) 93%,rgba(0,0,0,.25) 97%,transparent 100%);-webkit-mask-image:var(--fx),var(--fy);-webkit-mask-composite:source-in;mask-image:var(--fx),var(--fy);mask-composite:intersect}
+.vv-media::after{content:"";position:absolute;inset:0;z-index:1;pointer-events:none;backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);-webkit-mask-image:radial-gradient(ellipse 50% 50% at 50% 50%,transparent 70%,rgba(0,0,0,.5) 86%,#000 100%);mask-image:radial-gradient(ellipse 50% 50% at 50% 50%,transparent 70%,rgba(0,0,0,.5) 86%,#000 100%)}
+.vv-dock-wrap{position:relative;padding:6px 10px 6px}
+.vv-dock-wrap::before{content:"";position:absolute;left:14%;right:14%;top:0;bottom:0;border-radius:999px;background:radial-gradient(ellipse at 50% 55%,rgba(255,252,246,.9),rgba(255,252,246,0) 70%);filter:blur(12px);pointer-events:none}
+.vv-dock{position:relative;max-width:24rem}
+.vv-clip-heading{position:relative;text-align:center;font-size:10px;color:#514b43;min-height:18px;line-height:18px}
+.vv-queue{position:relative;display:flex;align-items:center;gap:4px;max-width:24rem;margin:0 auto 6px}
+.vv-clip-list{display:flex;gap:4px;min-width:0;flex:1;overflow-x:auto;scrollbar-width:none}
+.vv-clip-list::-webkit-scrollbar{display:none}
+.vv-clip-list button{flex:none;border-radius:999px;padding:5px 9px;background:rgba(255,255,255,.66);color:#5b554c;font-size:10px;white-space:nowrap}
+.vv-clip-list button[aria-current="true"]{background:#e1eeea;color:#23534d;box-shadow:inset 0 0 0 1px #b7cec6}
+.vv-queue-arrow{display:grid;place-items:center;width:26px;height:26px;flex:none;border-radius:50%;background:rgba(255,255,255,.8)}
+.vv-queue button:disabled{opacity:.3;cursor:default}
+.vv-queue button:focus-visible,.vv-clip-context summary:focus-visible{outline:2px solid #2f6f6d;outline-offset:2px}
+.vv-clip-context{position:relative;max-width:24rem;margin:4px auto 0;font-size:9px;line-height:1.5;color:#61584f;text-align:center}
+.vv-clip-context summary{cursor:pointer;list-style:none}
+.vv-clip-context summary::-webkit-details-marker{display:none}
+.vv-clip-context[open]>div{position:absolute;bottom:22px;left:0;right:0;z-index:5;font-size:11px;text-align:left}
+.is-compact .vv-dock-wrap{padding:4px 6px}
+.vv-glass{background:rgba(252,250,246,.82);backdrop-filter:blur(14px) saturate(1.1);-webkit-backdrop-filter:blur(14px) saturate(1.1);box-shadow:0 0 0 1px rgba(220,212,200,.25),0 12px 34px -12px rgba(40,30,20,.28),0 0 24px 6px rgba(255,252,246,.55)}
+.vv-pill{border-radius:999px;background:rgba(252,250,246,.86);color:#4f463f;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.video-range{appearance:none;height:4px;border-radius:4px;background:linear-gradient(to right,#b4532a var(--p,0%),#ddd0bf var(--p,0%));cursor:pointer}
+.video-range::-webkit-slider-thumb{appearance:none;width:12px;height:12px;border-radius:50%;background:#2f6f6d;border:2px solid #fbf7ef}
+.video-range::-moz-range-thumb{width:10px;height:10px;border-radius:50%;background:#2f6f6d;border:2px solid #fbf7ef}
+@media(prefers-reduced-motion:reduce){.mars-skeleton{animation:none}.exhibit-chrome{transition:none}}

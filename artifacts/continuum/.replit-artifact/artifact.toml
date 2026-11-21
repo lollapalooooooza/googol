@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Continuum — Living Biology"
+description = "An interactive browser-inspired biology workspace based on Runway Continuum, with Wikipedia-style tabs for plant cells, neurons, bacteria, and animal cells."
+version = "1.0.0"
+id = "artifacts/continuum"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23222
+
+[services.development]
+run = "pnpm --filter @workspace/continuum run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/continuum", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/continuum/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23222"
+BASE_PATH = "/"

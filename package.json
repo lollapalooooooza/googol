@@ -1,0 +1,32 @@
+{
+  "name": "googol",
+  "version": "0.0.0",
+  "license": "MIT",
+  "type": "module",
+  "workspaces": [
+    "artifacts/*",
+    "lib/*",
+    "scripts"
+  ],
+  "scripts": {
+    "dev": "tsx server.ts",
+    "start": "NODE_ENV=production tsx server.ts",
+    "build": "npm run typecheck && npm run build --workspaces --if-present",
+    "typecheck:libs": "tsc --build",
+    "typecheck": "npm run typecheck:libs && npm run typecheck --workspaces --if-present"
+  },
+  "private": true,
+  "dependencies": {
+    "express": "^5.3.0",
+    "tsx": "^4.21.0",
+    "vite": "^7.3.2"
+  },
+  "devDependencies": {
+    "prettier": "^3.9.10",
+    "typescript": "~5.9.3"
+  },
+  "overrides": {
+    "esbuild": "0.28.2",
+    "js-yaml": "4.3.2"
+  }
+}

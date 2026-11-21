@@ -1,0 +1,200 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: API specification
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+paths:
+  /media/{asset}:
+    get:
+      operationId: getDemoMedia
+      summary: Read an allowlisted public exhibit asset, with byte-range support
+      parameters:
+        - in: path
+          name: asset
+          required: true
+          schema:
+            type: string
+            enum: [mars-surface.jpg, jensen-timeline.mp4, jensen-poster.jpg]
+        - in: header
+          name: Range
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Complete public media
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "206":
+          description: Requested byte range
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "404":
+          description: Unknown asset
+        "416":
+          description: Invalid byte range
+        "503":
+          description: Asset storage unavailable
+  /wiki/article:
+    get:
+      operationId: getWikiArticle
+      summary: Read a current Wikipedia article
+      parameters:
+        - in: query
+          name: title
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 250
+      responses:
+        "200":
+          description: Wikipedia article with attribution
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WikiArticle"
+        "404":
+          description: Article not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WikiError"
+        "400":
+          description: Invalid article title
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WikiError"
+        "422":
+          description: Only encyclopedia articles are supported
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WikiError"
+        "429":
+          description: Wikipedia rate limit, retry after the indicated delay
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WikiError"
+        "502":
+          description: Wikipedia unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WikiError"
+  /wiki/search:
+    get:
+      operationId: searchWiki
+      summary: Search Wikipedia article titles
+      parameters:
+        - in: query
+          name: q
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 250
+      responses:
+        "200":
+          description: Matching articles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WikiSearchResult"
+        "502":
+          description: Wikipedia unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WikiError"
+        "400":
+          description: Invalid search query
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WikiError"
+        "429":
+          description: Wikipedia rate limit, retry after the indicated delay
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WikiError"
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+components:
+  schemas:
+    WikiError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+    WikiSearchResult:
+      type: object
+      required: [title, description]
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+    WikiSection:
+      type: object
+      required: [anchor, title, level]
+      properties:
+        anchor:
+          type: string
+        title:
+          type: string
+        level:
+          type: integer
+    WikiArticle:
+      type: object
+      required: [title, html, url, revisionId, sections]
+      properties:
+        title:
+          type: string
+        html:
+          type: string
+        url:
+          type: string
+        revisionId:
+          type: integer
+          minimum: 1
+        redirectAnchor:
+          type: string
+          description: Section targeted by a Wikipedia redirect, when present
+        sections:
+          type: array
+          items:
+            $ref: "#/components/schemas/WikiSection"
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+

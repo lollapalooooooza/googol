@@ -1,0 +1,4 @@
+@import url("https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap");
+.organelle-preview { font-family: "Geist", system-ui, sans-serif; background: #f3eee2; }
+.organelle-preview .chip-scroll { scrollbar-width: none; }
+.organelle-preview .chip-scroll::-webkit-scrollbar { display: none; }

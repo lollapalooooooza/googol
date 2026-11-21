@@ -1,0 +1,32 @@
+.browser-width-handle {
+  position: absolute; z-index: 50; top: 16px; bottom: 16px; width: 12px;
+  display: grid; place-items: center; cursor: ew-resize; touch-action: none;
+  border-radius: 10px; outline: none;
+}
+.browser-width-handle-left { left: -8px; }
+.browser-width-handle-right { right: -8px; }
+.browser-width-handle span {
+  width: 3px; height: 42px; border-radius: 4px; background: #a5afa8; opacity: 0;
+  box-shadow: 0 0 0 3px rgb(255 255 255 / 80%);
+  transition: opacity .15s, background-color .15s;
+}
+.browser-width-handle:hover span, .browser-width-handle:focus-visible span,
+[data-resizing="true"] > .browser-width-handle span { opacity: 1; }
+.browser-width-handle:focus-visible span { background: #5d7d64; box-shadow: 0 0 0 3px #eff5ed, 0 0 0 5px #7e9681; }
+.browser-width-resizing, .browser-width-resizing * { cursor: ew-resize !important; user-select: none !important; }
+.browser-window-content { container-type: inline-size; container-name: browser-window; }
+@container browser-window (max-width: 920px) {
+  .browser-window-content .wiki-masthead nav { display: none; }
+  .browser-window-content .wiki-layout { display: block; }
+  .browser-window-content .wiki-layout > nav { display: none; }
+}
+@container browser-window (max-width: 640px) {
+  .browser-window-content .wiki-masthead [data-testid="link-wiki-logo"] { display: none; }
+  .browser-window-content .wiki-article-tabs > div:last-child { display: none; }
+  .browser-window-content .wiki-body .infobox,
+  .browser-window-content .wiki-body figure,
+  .browser-window-content .wiki-body .thumb,
+  .browser-window-content .wiki-body table.sidebar { float: none; margin: .5em auto; width: auto; }
+}
+@media (pointer: coarse) { .browser-width-handle span { opacity: .5; } }
+@media (prefers-reduced-motion: reduce) { .browser-width-handle span { transition: none; } }
