@@ -6,9 +6,16 @@ export const wikiUrl = (title: string, hash?: string) =>
 export const wikiSearchUrl = (query: string) =>
   `${WIKI}/w/index.php?search=${encodeURIComponent(query)}`;
 
+export const googleSearchUrl = (query: string) =>
+  `https://www.google.com/search?q=${encodeURIComponent(query).replace(/%20/g, "+")}`;
+
 export const searchEntry = (query: string) => `?search=${encodeURIComponent(query.trim())}`;
 export const searchFromEntry = (value: string) =>
   value.startsWith("?search=") ? decode(value.slice(8)) : null;
+
+export const chromeSearchEntry = (query: string) => `?gsearch=${encodeURIComponent(query.trim())}`;
+export const chromeSearchFromEntry = (value: string) =>
+  value.startsWith("?gsearch=") ? decode(value.slice(9)) : null;
 
 export const normTitle = (title: string) => {
   const value = title.replace(/_/g, " ").trim();

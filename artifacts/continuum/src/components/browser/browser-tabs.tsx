@@ -3,7 +3,25 @@ import { ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
 import { tabLayout } from "./tab-layout";
 import "./browser-tabs.css";
 
-interface HeaderTab { key: number; label: string; empty: boolean }
+export type HeaderTabKind = "wiki" | "google" | "news" | "empty";
+
+interface HeaderTab {
+  key: number;
+  label: string;
+  empty: boolean;
+  kind?: HeaderTabKind;
+}
+
+function GoogleFavicon() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-[14px]" aria-hidden="true">
+      <path fill="#4285F4" d="M23.745 12.27c0-.79-.07-1.54-.19-2.27h-11.3v4.51h6.47c-.29 1.48-1.14 2.73-2.4 3.58v3h3.86c2.26-2.09 3.56-5.17 3.56-8.82z" />
+      <path fill="#34A853" d="M12.255 24c3.24 0 5.95-1.08 7.93-2.91l-3.86-3c-1.08.72-2.45 1.16-4.07 1.16-3.13 0-5.78-2.11-6.73-4.96h-3.98v3.09C3.515 21.3 7.565 24 12.255 24z" />
+      <path fill="#FBBC05" d="M5.525 14.29c-.25-.72-.38-1.49-.38-2.29s.14-1.57.38-2.29V6.62h-3.98a11.86 11.86 0 0 0 0 10.76l3.98-3.09z" />
+      <path fill="#EA4335" d="M12.255 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C18.205 1.19 15.495 0 12.255 0c-4.69 0-8.74 2.7-10.71 6.62l3.98 3.09c.95-2.85 3.6-4.96 6.73-4.96z" />
+    </svg>
+  );
+}
 
 export function BrowserTabs({ tabs, activeKey, minimized, onSelect, onClose, onNew }: {
   tabs: HeaderTab[];
@@ -94,17 +112,36 @@ export function BrowserTabs({ tabs, activeKey, minimized, onSelect, onClose, onN
       <div ref={viewport} className="browser-tabs-viewport" onScroll={updateEdges}>
         {tabs.map((tab) => {
           const on = tab.key === activeKey && !minimized;
-          const title = tab.label.replace(/ — Wikipedia(?: search)?$/, "");
+          const kind: HeaderTabKind = tab.kind ?? (tab.empty ? "empty" : "wiki");
+          const title =
+            kind === "google"
+              ? tab.label.replace(/ (?:—|-) Google Search$/, "")
+              : kind === "news"
+                ? tab.label.replace(/ — Briefing$/, "")
+                : tab.label.replace(/ — Wikipedia(?: search)?$/, "");
+          const sourceSuffix =
+            kind === "google"
+              ? " - Google Search"
+              : kind === "news"
+                ? " — Briefing"
+                : kind === "wiki"
+                  ? " — Wikipedia"
+                  : "";
           return (
-            <div key={tab.key} className="browser-tab" data-active={on} style={{ width: tabWidth }}
+            <div key={tab.key} className="browser-tab" data-active={on} data-tab-kind={kind} style={{ width: tabWidth }}
               onMouseDown={(e) => { if (e.button === 1) e.preventDefault(); }}
               onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); onClose(tab.key); } }}>
               <button ref={(el) => { if (el) buttons.current.set(tab.key, el); else buttons.current.delete(tab.key); }}
                 id={`header-tab-${tab.key}`} role="tab" aria-selected={on} aria-controls="browser-article-panel"
                 aria-label={tab.label} title={tab.label} tabIndex={tab.key === activeKey ? 0 : -1}
                 data-testid={`tab-${tab.key}`} className="browser-tab-select" onKeyDown={(e) => keyboard(e, tab.key)} onClick={() => onSelect(tab.key)}>
-                <span className="browser-tab-favicon" aria-hidden>{tab.empty ? <Plus size={12} /> : "W"}</span>
-                <span className="browser-tab-title">{title}{!tab.empty && <span className="browser-tab-source"> — Wikipedia</span>}</span>
+                <span className="browser-tab-favicon" aria-hidden>
+                  {kind === "empty" ? <Plus size={12} /> : kind === "google" ? <GoogleFavicon /> : kind === "news" ? "N" : "W"}
+                </span>
+                <span className="browser-tab-title">
+                  {title}
+                  {sourceSuffix && <span className="browser-tab-source">{sourceSuffix}</span>}
+                </span>
               </button>
               <button className="browser-tab-close" aria-label={`Close ${tab.label}`} title="Close tab"
                 data-testid={`button-close-tab-${tab.key}`} onClick={() => onClose(tab.key)}><X size={12} /></button>

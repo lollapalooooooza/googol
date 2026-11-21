@@ -1,6 +1,19 @@
 import DOMPurify from "dompurify";
 import { classifyHref, wikiUrl, WIKI } from "./wiki-navigation";
-export { classifyHref, normTitle, titleFromUrl, wikiUrl, wikiSearchUrl, looksLikeUrl, searchEntry, searchFromEntry, WIKI } from "./wiki-navigation";
+export {
+  classifyHref,
+  normTitle,
+  titleFromUrl,
+  wikiUrl,
+  wikiSearchUrl,
+  googleSearchUrl,
+  looksLikeUrl,
+  searchEntry,
+  searchFromEntry,
+  chromeSearchEntry,
+  chromeSearchFromEntry,
+  WIKI,
+} from "./wiki-navigation";
 
 const fixUrl = (u: string) => (u.startsWith("//") ? "https:" + u : u.startsWith("/") && !u.startsWith("//") ? WIKI + u : u);
 

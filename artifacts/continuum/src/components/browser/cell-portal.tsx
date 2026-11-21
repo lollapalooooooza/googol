@@ -7,6 +7,7 @@ import { CellViewer } from "@/components/cell/cell-viewer";
 import type { Rect } from "./region-select";
 import { EXHIBIT_MEDIA, VISUALIZATION_INFO, type VisualizationId } from "@/lib/visualizations";
 import { MarsViewer } from "@/components/exhibits/mars-viewer";
+import { EiffelViewer } from "@/components/exhibits/eiffel-viewer";
 import { VideoViewer } from "@/components/exhibits/video-viewer";
 import { ModelUnavailable } from "./model-unavailable";
 
@@ -188,6 +189,8 @@ export function CellPortal({ anchor, expanded, onExpand, onCollapse, onClose, on
             transition={transition}>
           {model === "mars"
             ? <MarsViewer compact={!expanded} transitioning={transitioning} textureUrl={EXHIBIT_MEDIA.mars} actions={actions} />
+            : model === "eiffel"
+            ? <EiffelViewer compact={!expanded} transitioning={transitioning} actions={actions} />
             : model === "jensen-video"
             ? <VideoViewer compact={!expanded} transitioning={transitioning} playWhenReady={!loading} selection={videoSelection} src={EXHIBIT_MEDIA.video} poster={EXHIBIT_MEDIA.poster} actions={actions} />
             : model ? <CellViewer key={model} model={model} compact={!expanded} transitioning={transitioning} feathered actions={actions} />

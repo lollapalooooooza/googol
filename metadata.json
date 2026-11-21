@@ -1,0 +1,6 @@
+{
+  "name": "googol",
+  "description": "Interactive visual browser with archival 3D exhibitions, Gemini 4 Argon & Hydrogen routing, voice detection, and live Genie 4 world models.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

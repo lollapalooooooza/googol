@@ -1,4 +1,4 @@
-.mars-viewer{background:radial-gradient(ellipse at 50% 45%,#efe2cf 0%,#f3ece0 55%,#f4efe5 100%)}
+.mars-viewer{background:radial-gradient(ellipse at 50% 45%,#c76e3b 0%,#8f4222 55%,#481f11 100%)}
 .exhibit-chrome{transition:opacity .22s ease}
 .exhibit-chrome.is-hidden{opacity:0;pointer-events:none}
 .exhibit-chrome.is-hidden *{pointer-events:none!important}

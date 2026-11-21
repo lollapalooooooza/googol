@@ -1,23 +1,47 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronLeft, ChevronRight, RotateCw, X, Minus, Search, ScanSearch } from "lucide-react";
+import { ChevronLeft, ChevronRight, RotateCw, X, Minus, Search } from "lucide-react";
 import { WikiPage, NewTabPage, type NavFn } from "@/components/wiki/wiki-page";
 import { WikiSearchPage } from "@/components/wiki/wiki-search-page";
+import { ChromeSearchPage } from "@/components/chrome/chrome-search-page";
 import { SuggestList } from "@/components/wiki/search-suggest";
-import { RegionSelect, type Rect } from "@/components/browser/region-select";
+import { RegionSelect, type ExternalMarqueeStart, type Rect } from "@/components/browser/region-select";
 import { CellPortal } from "@/components/browser/cell-portal";
 import { CellViewer } from "@/components/cell/cell-viewer";
 import { AddressCapsule } from "@/components/browser/address-capsule";
-import { BrowserTabs } from "@/components/browser/browser-tabs";
+import { BrowserTabs, type HeaderTabKind } from "@/components/browser/browser-tabs";
 import { useBrowserWidth } from "@/components/browser/browser-width";
-import { titleFromUrl, wikiUrl, wikiSearchUrl, normTitle, looksLikeUrl, searchEntry, searchFromEntry } from "@/lib/wiki";
+import { CommandDock, type Gemini4Answer } from "@/components/browser/command-dock";
+import {
+  titleFromUrl,
+  wikiUrl,
+  wikiSearchUrl,
+  googleSearchUrl,
+  normTitle,
+  looksLikeUrl,
+  searchEntry,
+  searchFromEntry,
+  chromeSearchEntry,
+  chromeSearchFromEntry,
+} from "@/lib/wiki";
 import { INITIAL_ARTICLES } from "@/data/articles";
 import { useReaderSettings } from "@/hooks/use-reader-settings";
 import { getGetWikiArticleQueryKey, useGetWikiArticle } from "@workspace/api-client-react";
 import { MODEL_INFO, modelFromView, type ModelId } from "@/lib/model-catalog";
-import { EXHIBIT_MEDIA, NEWS_ENTRY, VISUALIZATION_INFO, resolveVisualization } from "@/lib/visualizations";
+import { EXHIBIT_MEDIA, NEWS_ENTRY, VISUALIZATION_INFO, resolveVisualization, type VisualizationId } from "@/lib/visualizations";
+import {
+  EIFFEL_ELEVATION_PLATE_SRC,
+  normalizeSearchIntent,
+  pickBestImageForMarquee,
+  resolveChromeVisualization,
+  type BoxRect,
+} from "@/lib/chrome-search";
 import { clipsForRegion, type ClipSelection } from "@/lib/jensen-clips";
+import { extractSelectedRegionContext } from "@/lib/region-extract";
 import { MarsViewer } from "@/components/exhibits/mars-viewer";
+import { EiffelViewer } from "@/components/exhibits/eiffel-viewer";
+import { GenieWorldViewer, type GenieWorldLaunchRequest } from "@/components/exhibits/genie-world-viewer";
 import { NewsPage } from "@/components/exhibits/news-page";
 
 interface Tab { key: number; history: string[]; idx: number }
@@ -27,19 +51,18 @@ const split = (e: string) => { const i = e.indexOf("#"); return i < 0 ? { title:
 const entry = (t: string, hash?: string) => (hash ? `${normTitle(t)}#${hash}` : normTitle(t));
 
 const HELP: [string, string][] = [
-  ["Plant cell", "open an article by title"],
-  ["https://en.wikipedia.org/wiki/…", "open a Wikipedia URL"],
-  ["search beaver dam", "show matching articles"],
-  ["new tab neuron", "open in a new tab"],
-  ["select", "drag-select a region of the page"],
-  ["3d model", "expand the current article's selected 3D preview"],
+  ["Ask anything", "routed to Gemini 4 Argon or Hydrogen"],
+  ["genie <scene>", "generate a live Genie 4 interactive world"],
+  ["open Plant cell", "open an article by title"],
+  ["search beaver dam", "search Wikipedia articles"],
+  ["select", "box-select text or images for 3D / Genie 4"],
   ["back / forward / reload / close tab", "browser actions"],
 ];
 
 export default function Browser({ newsRoute = false }: { newsRoute?: boolean }) {
-  const [standalone, setStandalone] = useState<ModelId | "mars" | null>(() => {
+  const [standalone, setStandalone] = useState<ModelId | "mars" | "eiffel" | null>(() => {
     const view = new URLSearchParams(window.location.search).get("view");
-    return view === "mars" ? "mars" : modelFromView(view);
+    return view === "mars" ? "mars" : view === "eiffel" ? "eiffel" : modelFromView(view);
   });
   const [tabs, setTabs] = useState<Tab[]>(() => INITIAL.map((t, i) => ({ key: i + 1, history: [t], idx: 0 })));
   const [activeKey, setActiveKey] = useState(() => newsRoute ? 4 : 1);
@@ -49,6 +72,7 @@ export default function Browser({ newsRoute = false }: { newsRoute?: boolean }) 
   const [contentsOpen, setContentsOpen] = useState(true);
   const [minimized, setMinimized] = useState(false);
   const [drawing, setDrawing] = useState(false);
+  const [externalDrag, setExternalDrag] = useState<ExternalMarqueeStart | null>(null);
   const [rect, setRect] = useState<Rect | null>(null);
   const [portalOn, setPortalOn] = useState(false);
   const [portalAnchor, setPortalAnchor] = useState<Rect | null>(null);
@@ -57,6 +81,11 @@ export default function Browser({ newsRoute = false }: { newsRoute?: boolean }) 
   const [cellOpen, setCellOpen] = useState(false);
   const [portalDocument, setPortalDocument] = useState("");
   const [videoSelection, setVideoSelection] = useState<ClipSelection>();
+  const [eiffelExhibition, setEiffelExhibition] = useState<{ sourceRect: BoxRect; imageSrc: string } | null>(null);
+  const [genieWorld, setGenieWorld] = useState<GenieWorldLaunchRequest | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiAnswer, setAiAnswer] = useState<Gemini4Answer | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
   const areaRef = useRef<HTMLDivElement>(null);
   const addrRef = useRef<HTMLInputElement>(null);
   const browserWidth = useBrowserWidth();
@@ -91,18 +120,35 @@ export default function Browser({ newsRoute = false }: { newsRoute?: boolean }) 
 
   const active = tabs.find((t) => t.key === activeKey) ?? tabs[0];
   const cur = active ? active.history[active.idx] : "";
-  const searchQuery = searchFromEntry(cur);
-  const { title, hash } = split(searchQuery === null ? cur : "");
+  const chromeQuery = chromeSearchFromEntry(cur);
+  const searchQuery = chromeQuery === null ? searchFromEntry(cur) : null;
+  const { title, hash } = split(searchQuery === null && chromeQuery === null ? cur : "");
   const isNews = title === NEWS_ENTRY;
   // Observe the SAME query as WikiPage without fetching twice. Tab display
   // names are not proof that this document has successfully loaded.
   const articleQuery = useGetWikiArticle({ title }, { query: {
     queryKey: getGetWikiArticleQueryKey({ title }), enabled: false,
   } });
-  const loadedArticle = isNews ? { title: "Jensen Huang" } : searchQuery === null && title ? articleQuery.data : undefined;
-  const model = resolveVisualization(loadedArticle?.title, title);
-  const documentIdentity = `${active?.key ?? ""}:${cur}:${reloadTick}:${loadedArticle?.title ?? ""}`;
-  const portalMatches = portalDocument === documentIdentity && !!loadedArticle;
+  const loadedArticle = isNews ? { title: "Jensen Huang" } : searchQuery === null && chromeQuery === null && title ? articleQuery.data : undefined;
+  const portalSubject = chromeQuery !== null
+    ? normalizeSearchIntent(chromeQuery).effectiveQuery || chromeQuery
+    : loadedArticle?.title ?? title;
+  const model = chromeQuery !== null
+    ? resolveChromeVisualization(chromeQuery)
+    : resolveVisualization(loadedArticle?.title, title);
+  const canSelectRegion = Boolean((title && loadedArticle) || chromeQuery !== null);
+  const documentIdentity = `${active?.key ?? ""}:${cur}:${reloadTick}:${chromeQuery !== null ? "chrome" : loadedArticle?.title ?? ""}`;
+  const portalMatches = portalDocument === documentIdentity && (chromeQuery !== null || !!loadedArticle);
+  const resolvedTitle = active && names[active.key]?.entry === cur ? names[active.key].title : title;
+  const shownUrl = isNews
+    ? NEWS_ENTRY
+    : chromeQuery !== null
+      ? googleSearchUrl(chromeQuery)
+      : searchQuery !== null
+        ? wikiSearchUrl(searchQuery)
+        : title
+          ? wikiUrl(resolvedTitle, hash)
+          : "";
 
   // A real, shareable news URL while the internal browser stays mounted.
   useEffect(() => {
@@ -122,12 +168,12 @@ export default function Browser({ newsRoute = false }: { newsRoute?: boolean }) 
   }, [isNews]);
   useEffect(() => {
     focusRun.current++;
-    setRect(null); setDrawing(false); setPortalAnchor(null);
-    setPortalOn(false); setPortalReady(false); setCellOpen(false);
+    setRect(null); setDrawing(false); setExternalDrag(null); setPortalAnchor(null);
+    setPortalOn(false); setPortalReady(false); setCellOpen(false); setEiffelExhibition(null); setGenieWorld(null);
   }, [cur, activeKey, reloadTick, loadedArticle?.title]);
   useEffect(() => { if (standalone) document.title = `${VISUALIZATION_INFO[standalone].title} — Interactive 3D`; }, [standalone]);
   useEffect(() => { if (isNews) document.title = "Jensen Huang: Relationships and Recent News"; }, [isNews]);
-  useEffect(() => { if (!title && searchQuery === null) document.title = "New tab"; }, [title, searchQuery]);
+  useEffect(() => { if (!title && searchQuery === null && chromeQuery === null) document.title = "New tab"; }, [title, searchQuery, chromeQuery]);
 
   const pushEntry = useCallback((key: number, e: string) => {
     setTabs((ts) => ts.map((t) => (t.key !== key ? t : t.history[t.idx] === e ? t : { ...t, history: [...t.history.slice(0, t.idx + 1), e], idx: t.idx + 1 })));
@@ -157,6 +203,14 @@ export default function Browser({ newsRoute = false }: { newsRoute?: boolean }) 
   /* address */
   const [addr, setAddr] = useState("");
   const [addrFocus, setAddrFocus] = useState(false);
+  const chromeSearch = (query: string) => {
+    const value = query.trim();
+    if (!value) return;
+    if (value.length > 250) { say("Search using 250 characters or fewer."); return; }
+    const e = chromeSearchEntry(value);
+    if (active) pushEntry(active.key, e); else openTab(e);
+    setMinimized(false);
+  };
   const submitAddress = (raw: string) => {
     const s = raw.trim(); if (!s) return;
     const localPath = `${import.meta.env.BASE_URL.replace(/\/$/, "")}${NEWS_ENTRY}`;
@@ -166,7 +220,7 @@ export default function Browser({ newsRoute = false }: { newsRoute?: boolean }) 
     const u = titleFromUrl(s);
     if (u) navigate(u.title, { hash: u.hash });
     else if (looksLikeUrl(s)) say("Only English Wikipedia article URLs open inside googol.");
-    else search(s);
+    else chromeSearch(s);
     setAddrFocus(false); addrRef.current?.blur();
   };
 
@@ -186,16 +240,102 @@ export default function Browser({ newsRoute = false }: { newsRoute?: boolean }) 
     setMinimized(false);
   };
   const clearSelection = () => {
-    setRect(null); setPortalAnchor(null); setPortalOn(false); setPortalReady(false); setCellOpen(false);
+    setRect(null); setExternalDrag(null); setPortalAnchor(null); setPortalOn(false); setPortalReady(false); setCellOpen(false);
   };
   const startSelect = () => {
-    if (!loadedArticle) { say(title ? "Wait for the Wikipedia article to load before selecting a region." : "Open a Wikipedia article first."); return; }
+    if (!canSelectRegion) { say(title ? "Wait for the Wikipedia article to load before selecting a region." : "Open a Wikipedia article or Google search page first."); return; }
     clearSelection(); setDrawing(true); setCellOpen(false); setMinimized(false);
   };
+  const startImageMarquee = (drag: ExternalMarqueeStart) => {
+    if (!canSelectRegion) return;
+    clearSelection();
+    setDrawing(true);
+    setExternalDrag(drag);
+    setCellOpen(false);
+    setMinimized(false);
+  };
+  const launchGenieFromSelection = useCallback(
+    (selection: Rect | null, customPrompt?: string) => {
+      const b = areaRef.current?.getBoundingClientRect();
+      const pageLabel = portalSubject || resolvedTitle || "Web page";
+      const viewportSelection =
+        selection && b
+          ? { x: selection.x + b.left, y: selection.y + b.top, w: selection.w, h: selection.h }
+          : b
+            ? { x: b.left, y: b.top, w: b.width, h: Math.min(b.height, 420) }
+            : { x: 0, y: 0, w: 0, h: 0 };
+
+      const extracted = extractSelectedRegionContext(areaRef.current, viewportSelection, pageLabel);
+      setRect(null);
+      setDrawing(false);
+      setExternalDrag(null);
+      setPortalOn(false);
+      setCellOpen(false);
+      setGenieWorld({
+        selectedText: extracted.selectedText,
+        imageAlt: extracted.imageAlt,
+        referenceImageBase64: extracted.referenceImageBase64,
+        pageTitle: pageLabel,
+        sourceLabel: customPrompt ? customPrompt.slice(0, 72) : extracted.sourceLabel,
+        customPrompt,
+      });
+    },
+    [portalSubject, resolvedTitle],
+  );
+
   const revealPortal = (selection: Rect | null) => {
-    if (!loadedArticle || !selection || selection.w < 40 || selection.h < 40) return;
+    if (!canSelectRegion || !selection || selection.w < 40 || selection.h < 40) return;
     const b = areaRef.current?.getBoundingClientRect();
     const absoluteSelection = { ...selection, x: selection.x + (b?.left ?? 0), y: selection.y + (b?.top ?? 0) };
+
+    if (chromeQuery !== null && model === "eiffel") {
+      const container = areaRef.current;
+      let sourceRect: BoxRect = absoluteSelection;
+      if (container) {
+        const candidates = Array.from(container.querySelectorAll<HTMLElement>("[data-eiffel-selectable]"))
+          .map((el) => {
+            const img = el.querySelector<HTMLImageElement>("img");
+            const target = img ?? el;
+            const r = target.getBoundingClientRect();
+            return {
+              el,
+              img,
+              rect: { x: r.left, y: r.top, w: r.width, h: r.height },
+            };
+          })
+          .filter((c) => c.rect.w > 10 && c.rect.h > 10);
+
+        const matched = pickBestImageForMarquee(absoluteSelection, candidates);
+        if (matched) {
+          sourceRect = matched.rect;
+        } else {
+          const plateImg = container.querySelector<HTMLImageElement>('[data-eiffel-plate-img="true"]');
+          if (plateImg) {
+            const pr = plateImg.getBoundingClientRect();
+            if (pr.width > 10 && pr.height > 10) {
+              sourceRect = { x: pr.left, y: pr.top, w: pr.width, h: pr.height };
+            }
+          }
+        }
+      }
+      setRect(null);
+      setDrawing(false);
+      setExternalDrag(null);
+      setPortalOn(false);
+      setEiffelExhibition({
+        sourceRect,
+        imageSrc: EIFFEL_ELEVATION_PLATE_SRC,
+      });
+      return;
+    }
+
+    // Any page/content without a bespoke exhibit launches a real Genie 4 world model
+    // from the user's selected text & image context.
+    if (model === null) {
+      launchGenieFromSelection(selection);
+      return;
+    }
+
     setVideoSelection(model === "jensen-video" && areaRef.current ? clipsForRegion(areaRef.current, absoluteSelection) : undefined);
     setPortalDocument(documentIdentity);
     setCellOpen(false);
@@ -203,14 +343,82 @@ export default function Browser({ newsRoute = false }: { newsRoute?: boolean }) 
   };
   const finishSelection = (selection: Rect | null) => {
     setDrawing(false);
+    setExternalDrag(null);
     if (selection) revealPortal(selection);
     else clearSelection();
   };
-  const runCommand = (e: FormEvent) => {
-    e.preventDefault();
-    const raw = cmd.trim(); const s = raw.toLowerCase(); if (!raw) return;
-    setCmd(""); setHelpOpen(false);
-    if (s === "help" || s === "?") { setHelpOpen(true); return; }
+  const openPortalForElement = (el: HTMLElement) => {
+    const containerRect = areaRef.current?.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    if (!containerRect) return;
+    const localRect: Rect = {
+      x: Math.max(0, elRect.left - containerRect.left),
+      y: Math.max(0, elRect.top - containerRect.top),
+      w: Math.max(48, elRect.width),
+      h: Math.max(48, elRect.height),
+    };
+    setRect(localRect);
+    revealPortal(localRect);
+  };
+
+  const askGemini4 = async (rawPrompt: string) => {
+    setAiLoading(true);
+    setAiError(null);
+    setAiAnswer(null);
+    setHelpOpen(false);
+
+    let selectedContext = "";
+    if (rect && areaRef.current) {
+      const b = areaRef.current.getBoundingClientRect();
+      const extracted = extractSelectedRegionContext(
+        areaRef.current,
+        { x: rect.x + b.left, y: rect.y + b.top, w: rect.w, h: rect.h },
+        portalSubject || resolvedTitle,
+      );
+      selectedContext = [extracted.imageAlt, extracted.selectedText].filter(Boolean).join(" — ");
+    }
+
+    try {
+      const res = await fetch("/api/ai/prompt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: rawPrompt,
+          pageTitle: portalSubject || resolvedTitle,
+          pageUrl: shownUrl,
+          selectedContext,
+        }),
+      });
+      const data = (await res.json()) as {
+        answer?: string;
+        model?: "gemini-4-argon" | "gemini-4-hydrogen";
+        modelLabel?: string;
+        reason?: string;
+        error?: string;
+      };
+      if (!res.ok || !data.answer || !data.model) {
+        throw new Error(data.error || "Gemini 4 request failed.");
+      }
+      setAiAnswer({
+        prompt: rawPrompt,
+        answer: data.answer,
+        model: data.model,
+        modelLabel: data.modelLabel || (data.model === "gemini-4-argon" ? "Gemini 4 Argon" : "Gemini 4 Hydrogen"),
+        reason: data.reason || "",
+      });
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : "Failed to reach Gemini 4.");
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const runPromptOrCommand = (rawInput: string) => {
+    const raw = rawInput.trim();
+    const s = raw.toLowerCase();
+    if (!raw) return;
+    setHelpOpen(false);
+    if (s === "help" || s === "?") { setAiAnswer(null); setAiError(null); setHelpOpen(true); return; }
     if (/^(select|draw|region|select region|selection)$/.test(s)) { startSelect(); return; }
     const requestedModel = /^(3d neuron|neuron 3d|open 3d neuron)$/.test(s) ? "neuron"
       : /^(plant cell 3d|3d plant cell)$/.test(s) ? "plant-cell" : null;
@@ -231,7 +439,13 @@ export default function Browser({ newsRoute = false }: { newsRoute?: boolean }) 
     if (s === "close tab") { if (active) closeTab(active.key); return; }
     if (s === "reopen tab" || s === "reopen") { reopen(); return; }
     if (s === "new tab") { openTab(""); return; }
-    let m = raw.match(/^new tab\s+(.+)$/i) ?? raw.match(/^open\s+(.+?)\s+in (?:a )?new tab$/i);
+
+    let m = raw.match(/^(?:genie|genie 4|world|生成世界|世界模型)\s+(.+)$/i);
+    if (m) {
+      launchGenieFromSelection(rect, m[1].trim());
+      return;
+    }
+    m = raw.match(/^new tab\s+(.+)$/i) ?? raw.match(/^open\s+(.+?)\s+in (?:a )?new tab$/i);
     if (m) {
       const u = titleFromUrl(m[1]);
       if (!u && looksLikeUrl(m[1])) { say("Only English Wikipedia article URLs open inside googol."); return; }
@@ -240,18 +454,34 @@ export default function Browser({ newsRoute = false }: { newsRoute?: boolean }) 
     m = raw.match(/^(?:search|find)\s+(.+)$/i);
     if (m) { search(m[1]); return; }
     m = raw.match(/^(?:open|go to|goto|read|visit)\s+(.+)$/i);
-    const target = m ? m[1] : raw;
-    const u = titleFromUrl(target);
-    if (u) { navigate(u.title, { hash: u.hash }); return; }
-    if (looksLikeUrl(target)) { say("Only English Wikipedia article URLs open inside googol."); return; }
-    navigate(target); say(`Opening “${target}”`);
+    if (m) {
+      const target = m[1];
+      const u = titleFromUrl(target);
+      if (u) { navigate(u.title, { hash: u.hash }); return; }
+      if (looksLikeUrl(target)) { say("Only English Wikipedia article URLs open inside googol."); return; }
+      navigate(target); say(`Opening “${target}”`);
+      return;
+    }
+    const directUrl = titleFromUrl(raw);
+    if (directUrl) { navigate(directUrl.title, { hash: directUrl.hash }); return; }
+    if (looksLikeUrl(raw)) { say("Only English Wikipedia article URLs open inside googol."); return; }
+
+    // Natural language prompt -> intelligent Gemini 4 Argon / Hydrogen routing
+    void askGemini4(raw);
   };
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        if (cellOpen) collapseCell();
-        else {
+        if (genieWorld) {
+          setGenieWorld(null);
+        } else if (eiffelExhibition) {
+          setEiffelExhibition(null);
+        } else if (cellOpen) collapseCell();
+        else if (aiAnswer || aiError) {
+          setAiAnswer(null);
+          setAiError(null);
+        } else {
           const portalFocused = !!document.activeElement?.closest('[data-testid="portal-cell"]');
           setDrawing(false); clearSelection();
           if (portalFocused) requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('[data-testid="button-select-region"]')?.focus());
@@ -271,25 +501,34 @@ export default function Browser({ newsRoute = false }: { newsRoute?: boolean }) 
       <div className="h-[100dvh] w-full">
         {standalone === "mars"
           ? <MarsViewer textureUrl={EXHIBIT_MEDIA.mars} onClose={() => { window.history.replaceState(null, "", window.location.pathname); setStandalone(null); }} />
+          : standalone === "eiffel"
+          ? <EiffelViewer onClose={() => { window.history.replaceState(null, "", window.location.pathname); setStandalone(null); }} />
           : <CellViewer key={standalone} model={standalone} onClose={() => { window.history.replaceState(null, "", window.location.pathname); setStandalone(null); }} />}
       </div>
     );
   }
 
+  const tabKind = (t: Tab): HeaderTabKind => {
+    const e = t.history[t.idx];
+    if (!e) return "empty";
+    if (split(e).title === NEWS_ENTRY) return "news";
+    if (chromeSearchFromEntry(e) !== null) return "google";
+    return "wiki";
+  };
   const tabLabel = (t: Tab) => {
     const e = t.history[t.idx]; if (!e) return "New tab";
     if (split(e).title === NEWS_ENTRY) return "Jensen Huang — Briefing";
+    const chromeQ = chromeSearchFromEntry(e);
+    if (chromeQ !== null) return `${chromeQ} - Google Search`;
     const query = searchFromEntry(e);
     if (query !== null) return `${query} — Wikipedia search`;
     return `${names[t.key]?.entry === e ? names[t.key].title : split(e).title} — Wikipedia`;
   };
-  const resolvedTitle = active && names[active.key]?.entry === cur ? names[active.key].title : title;
-  const shownUrl = isNews ? NEWS_ENTRY : searchQuery !== null ? wikiSearchUrl(searchQuery) : title ? wikiUrl(resolvedTitle, hash) : "";
 
   return (
     <div className="desk relative min-h-[100dvh] h-[100dvh] w-full overflow-hidden" data-testid="desktop">
       {/* tabs outside browser */}
-      <BrowserTabs tabs={tabs.map((t) => ({ key: t.key, label: tabLabel(t), empty: !t.history[t.idx] }))}
+      <BrowserTabs tabs={tabs.map((t) => ({ key: t.key, label: tabLabel(t), empty: !t.history[t.idx], kind: tabKind(t) }))}
         activeKey={activeKey} minimized={minimized} onSelect={(key) => { setActiveKey(key); setMinimized(false); }}
         onClose={closeTab} onNew={() => openTab("")} />
       {/* browser */}
@@ -308,7 +547,7 @@ export default function Browser({ newsRoute = false }: { newsRoute?: boolean }) 
             <div className={`flex items-center gap-2 h-[24px] px-3 rounded-full bg-[#e8eaed] transition-shadow ${addrFocus ? "bg-white shadow-[0_0_0_1.5px_#9db7e8]" : ""}`}>
               <Search className="size-3.5 text-[#5f6368] shrink-0" />
               <input ref={addrRef} aria-label="Address" data-testid="input-address" spellCheck={false}
-                value={addrFocus ? addr : shownUrl} placeholder="Search Wikipedia or enter a wikipedia.org address"
+                value={addrFocus ? addr : shownUrl} placeholder="Search Google or type a URL"
                 onFocus={(e) => { setAddrFocus(true); setAddr(shownUrl); requestAnimationFrame(() => e.target.select()); }}
                 onBlur={() => setTimeout(() => setAddrFocus(false), 140)} onChange={(e) => setAddr(e.target.value)}
                 className="flex-1 min-w-0 bg-transparent outline-none text-[12.5px] text-[#202124] placeholder:text-[#80868b]" />
@@ -331,6 +570,17 @@ export default function Browser({ newsRoute = false }: { newsRoute?: boolean }) 
                 </div>
               </div>
             </div>
+          ) : chromeQuery !== null ? (
+            <ChromeSearchPage
+              key={`${active.key}-chrome-${chromeQuery}`}
+              query={chromeQuery}
+              reloadTick={reloadTick}
+              onChromeSearch={chromeSearch}
+              onNavigate={navigate}
+              onOpenStandalone={(m: VisualizationId) => setStandalone(m === "jensen-video" ? null : m)}
+              onStartMarquee={startImageMarquee}
+              onOpenPortalCenter={openPortalForElement}
+            />
           ) : searchQuery !== null ? (
             <WikiSearchPage key={`${active.key}-${searchQuery}`} query={searchQuery} reloadTick={reloadTick} onNavigate={navigate} onSearch={search} onToggleContents={() => setContentsOpen((v) => !v)} />
           ) : isNews ? <NewsPage key={`${active.key}-${reloadTick}`} onNavigate={navigate} /> : title ? (
@@ -338,14 +588,16 @@ export default function Browser({ newsRoute = false }: { newsRoute?: boolean }) 
               onNavigate={navigate} onSearch={search} onResolved={(t) => setNames((n) => (n[active.key]?.entry === cur && n[active.key]?.title === t ? n : { ...n, [active.key]: { entry: cur, title: t } }))} />
           ) : <NewTabPage key={active.key} onNavigate={navigate} onSearch={search} />}
 
-          {active && title && loadedArticle && (
+          {active && canSelectRegion && (
             <RegionSelect drawing={drawing} rect={rect} setRect={setRect} onDrawEnd={finishSelection} isVideo={isNews} onAdjustEnd={isNews ? finishSelection : undefined}
+              externalDrag={externalDrag} onExternalDragConsumed={() => setExternalDrag(null)}
               onVisualize={() => revealPortal(rect)} onExpand={() => { if (portalReady && portalOn) openCell(); else revealPortal(rect); }}
+              onLaunchGenie={() => launchGenieFromSelection(rect)}
               onClear={clearSelection} />
           )}
           <AnimatePresence>
-            {active && title && portalAnchor && portalOn && portalMatches && !drawing && (
-              <CellPortal key={`portal-${portalRun}-${documentIdentity}`} model={model} topic={loadedArticle.title} anchor={portalAnchor} expanded={cellOpen}
+            {active && portalAnchor && portalOn && portalMatches && !drawing && (
+              <CellPortal key={`portal-${portalRun}-${documentIdentity}`} model={model} topic={portalSubject} anchor={portalAnchor} expanded={cellOpen}
                 videoSelection={videoSelection} onReady={() => setPortalReady(true)} onExpand={openCell} onCollapse={collapseCell} onClose={closePortal} />
             )}
           </AnimatePresence>
@@ -353,34 +605,81 @@ export default function Browser({ newsRoute = false }: { newsRoute?: boolean }) 
         </div>
       </motion.section>
 
-      {/* bottom command input */}
-      <div className="absolute left-1/2 -translate-x-1/2 bottom-[14px] w-[min(92vw,max(300px,28vw))] z-40">
-        <AnimatePresence>
-          {helpOpen && (
-            <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }} className="absolute bottom-full mb-2 left-0 right-0 rounded-2xl bg-white/95 backdrop-blur border border-[#e3e5ea] shadow-[0_12px_32px_-14px_rgba(30,40,70,.35)] p-3" data-testid="panel-command">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[11px] font-medium uppercase tracking-wider text-[#80868b]">Supported commands</span>
-                <button aria-label="Close" onClick={() => setHelpOpen(false)} className="text-[#80868b] hover:text-[#1d1f24]"><X className="size-3.5" /></button>
+      {/* Bottom Prompt Box: Gemini 4 (Argon / Hydrogen) + Morphing Audio Detection Bar + Region Select */}
+      <CommandDock
+        cmd={cmd}
+        setCmd={setCmd}
+        onSubmitPrompt={runPromptOrCommand}
+        drawing={drawing}
+        onToggleSelect={() => (drawing ? setDrawing(false) : startSelect())}
+        helpOpen={helpOpen}
+        setHelpOpen={setHelpOpen}
+        helpEntries={HELP}
+        cmdMsg={cmdMsg}
+        onFocusHint={() => !cmd && setCmdMsg("Ask Gemini 4 anything, or type help for browser commands")}
+        aiLoading={aiLoading}
+        aiAnswer={aiAnswer}
+        aiError={aiError}
+        onDismissAi={() => { setAiAnswer(null); setAiError(null); }}
+        onLaunchGenieFromPrompt={(prompt) => {
+          setAiAnswer(null);
+          launchGenieFromSelection(rect, prompt);
+        }}
+      />
+
+      {/* Eiffel Tower Archival Exhibition with CellPortal-style soft feathered blur edges (no hardcut border) */}
+      {eiffelExhibition &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <>
+            <motion.div
+              key="eiffel-scrim"
+              className="fixed inset-0 z-[88] bg-[#e9ece4]/38 backdrop-blur-[5px]"
+              onClick={() => setEiffelExhibition(null)}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+              data-testid="eiffel-exhibition-scrim"
+            />
+            <div
+              className="pointer-events-none fixed inset-0 z-[90] grid place-items-center p-4 sm:p-6"
+              role="dialog"
+              aria-modal="true"
+              aria-label="La Tour de 300 Mètres — 1884 to 1889 Exhibition"
+              data-testid="eiffel-exhibition-overlay"
+            >
+              <div className="pointer-events-auto relative h-[min(88vh,860px)] w-[min(92vw,1320px)]">
+                {/* Outer feathered blur halo matching CellPortal expanded window */}
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute -inset-6 rounded-[48px] backdrop-blur-[12px] feather-ring-soft"
+                />
+                {/* Feathered 3D scene melts softly into the blurred desk while HUD & 1884 plate stay crisp */}
+                <div className="absolute inset-0">
+                  <EiffelViewer
+                    feathered
+                    transitionSource={eiffelExhibition}
+                    autoStartFrom1884
+                    onClose={() => setEiffelExhibition(null)}
+                  />
+                </div>
               </div>
-                <ul className="space-y-1">{HELP.map(([c, d]) => <li key={c} className="flex gap-2 text-[12.5px]"><code className="font-mono text-[#1d1f24] shrink-0">{c}</code><span className="text-[#6b7280] truncate">— {d}</span></li>)}
-                  <li className="pt-1 text-[11.5px] text-[#80868b]">These are fixed commands, not an AI assistant.</li></ul>
-            </motion.div>
-          )}
-        </AnimatePresence>
-        <form onSubmit={runCommand} className="flex items-center gap-2 h-[38px] pl-4 pr-1.5 rounded-full bg-white shadow-[0_6px_20px_-8px_rgba(30,40,70,.28),0_0_0_1px_rgba(30,40,70,.06)]">
-          <input value={cmd} onChange={(e) => setCmd(e.target.value)} placeholder="ask googol anything" aria-label="Command" data-testid="input-command"
-            onFocus={() => !cmd && setCmdMsg("Type help to see supported commands")} className="flex-1 min-w-0 bg-transparent outline-none text-[13.5px] text-[#1d1f24] placeholder:text-[#9aa0a6]" />
-          <button type="button" onClick={() => (drawing ? setDrawing(false) : startSelect())} aria-pressed={drawing} aria-label="Select a region" title="Select a region" data-testid="button-select-region"
-            className={`grid place-items-center size-7 rounded-full transition ${drawing ? "bg-[#2f6fe0] text-white" : "text-[#5f6368] hover:bg-[#f0f2f5]"}`}>
-            <ScanSearch className="size-4" />
-          </button>
-        </form>
-        <AnimatePresence>
-          {cmdMsg && !helpOpen && (
-            <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute left-0 right-0 -top-6 text-center text-[11.5px] text-[#5f6368]" data-testid="status-command">{cmdMsg}</motion.p>
-          )}
-        </AnimatePresence>
-      </div>
+            </div>
+          </>,
+          document.body,
+        )}
+
+      {/* Real Genie 4 Interactive World Model Overlay (Figure 2 UI + Keyboard Controls) */}
+      {genieWorld &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <GenieWorldViewer
+            request={genieWorld}
+            onClose={() => setGenieWorld(null)}
+          />,
+          document.body,
+        )}
     </div>
   );
 }
