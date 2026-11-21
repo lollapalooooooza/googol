@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { Pause, Play, Volume2, VolumeX, X, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react";
+import { Pause, Play, Volume2, VolumeX, X, RefreshCw } from "lucide-react";
 import { FULL_VIDEO_SELECTION, type ClipSelection } from "@/lib/jensen-clips";
 import { useClipPlayback } from "./use-clip-playback";
 import "./exhibits.css";
@@ -15,10 +15,12 @@ export function VideoViewer({ compact = false, transitioning = false, actions, o
   const clips = showFullVideo ? FULL_VIDEO_SELECTION.clips : selection.clips;
   const playback = useClipPlayback(ref, clips, playWhenReady);
   const { playing, muted, setMuted, toggle, seek, retry, status } = playback;
-  const time = playback.elapsed, dur = playback.length;
+  const dur = playback.length;
+  const [scrubTime, setScrubTime] = useState<number | null>(null);
+  const scrubHoldTimer = useRef<number>(0);
+  const time = scrubTime !== null ? Math.max(0, Math.min(dur || 0, scrubTime)) : playback.elapsed;
   const clip = clips[playback.index];
   const stageRef = useRef<HTMLDivElement>(null);
-  const queueRef = useRef<HTMLDivElement>(null);
   const [aspect, setAspect] = useState(9 / 16);
   const [box, setBox] = useState({ w: 0, h: 0 });
 
@@ -30,9 +32,9 @@ export function VideoViewer({ compact = false, transitioning = false, actions, o
     return () => ro.disconnect();
   }, []);
 
-  useEffect(() => {
-    queueRef.current?.querySelector('[aria-current="true"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [playback.index]);
+  useEffect(() => () => {
+    if (scrubHoldTimer.current) window.clearTimeout(scrubHoldTimer.current);
+  }, []);
 
   const fw = box.w && box.h ? Math.min(box.w, box.h * aspect) : 0;
   const frameStyle: CSSProperties = fw ? { width: fw, height: fw / aspect } : { height: "100%", aspectRatio: String(aspect), maxWidth: "100%" };
@@ -45,7 +47,28 @@ export function VideoViewer({ compact = false, transitioning = false, actions, o
     else if (e.key === "m") setMuted((m) => !m);
   };
   const hideExtras = compact || transitioning;
-  const pct = dur ? (time / dur) * 100 : 0;
+  const pct = dur > 0 ? Math.max(0, Math.min(100, (time / dur) * 100)) : 0;
+
+  const beginScrub = () => {
+    if (scrubHoldTimer.current) {
+      window.clearTimeout(scrubHoldTimer.current);
+      scrubHoldTimer.current = 0;
+    }
+    setScrubTime(playback.elapsed);
+  };
+
+  const endScrub = () => {
+    if (scrubHoldTimer.current) window.clearTimeout(scrubHoldTimer.current);
+    scrubHoldTimer.current = window.setTimeout(() => {
+      scrubHoldTimer.current = 0;
+      setScrubTime(null);
+    }, 90);
+  };
+
+  const handleSliderChange = (nextVal: number) => {
+    if (scrubTime !== null) setScrubTime(nextVal);
+    seek(nextVal);
+  };
 
   return (
     <div className={`video-viewer relative flex h-full w-full flex-col ${compact ? "is-compact" : ""}`} data-testid="video-viewer" data-playing={playing}
@@ -78,9 +101,7 @@ export function VideoViewer({ compact = false, transitioning = false, actions, o
         )}
 
         <div className={`exhibit-chrome absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-3 pointer-events-none ${hideExtras ? "is-hidden" : ""}`} inert={hideExtras || undefined}>
-          <p className="vv-pill pointer-events-auto max-w-[24ch] px-2.5 py-1 text-[10.5px] leading-snug" data-testid="text-video-label">
-            {fullVideo ? "Full supplied video." : "Matched by topic, not date."} Illustration only; captions unverified.
-          </p>
+          <span />
           <div className="pointer-events-auto flex items-center gap-1.5">
             {actions}
             {onClose && <button onClick={onClose} aria-label="Close video" title="Close" data-testid="button-close-video" className="vv-glass grid size-9 place-items-center rounded-full text-[#2a2420] hover:bg-white"><X className="size-4" /></button>}
@@ -89,36 +110,33 @@ export function VideoViewer({ compact = false, transitioning = false, actions, o
       </div>
 
       {clips.length > 0 && <div className="vv-dock-wrap shrink-0">
-        <div className="vv-clip-heading" aria-live="polite" data-testid="text-current-clip">
-          {fullVideo ? "Full video · from start to finish" : `Selected clips · ${playback.index + 1}/${clips.length} · ${clip?.title}`}
-        </div>
-        {!fullVideo && <div className="vv-queue" aria-label="Selected video clips">
-          <button className="vv-queue-arrow" aria-label="Previous clip" disabled={!playback.duration || playback.index === 0} onClick={() => playback.choose(playback.index - 1)}><ChevronLeft className="size-3.5" /></button>
-          <div ref={queueRef} className="vv-clip-list" data-testid="video-clip-list">
-            {clips.map((c, i) => <button key={c.id} aria-current={i === playback.index ? "true" : undefined}
-              disabled={!playback.duration} onClick={() => playback.choose(i)} data-testid={`button-clip-${c.id}`}
-              title={`${c.title} · ${c.start.toFixed(1)}–${c.end.toFixed(1)}s in the supplied video`}>{c.title}</button>)}
-          </div>
-          <button className="vv-queue-arrow" aria-label="Next clip" disabled={!playback.duration || playback.index === clips.length - 1} onClick={() => playback.choose(playback.index + 1)}><ChevronRight className="size-3.5" /></button>
-        </div>}
-        <div className="vv-dock vv-glass mx-auto flex items-center gap-2 rounded-full p-1.5 text-[#2a2420]" data-testid="video-control-dock">
-          <button onClick={toggle} disabled={!playback.duration} aria-label={playing ? "Pause" : playback.finished ? fullVideo ? "Replay full video" : "Replay selected clips" : "Play"} data-testid="button-video-play" className="grid size-9 shrink-0 place-items-center rounded-full bg-[#2f6f6d] text-[#f6efe0]">
+        <div className="vv-dock mx-auto flex items-center gap-2.5 rounded-full px-2 py-1.5 text-[#2a2420]" data-testid="video-control-dock">
+          <button onClick={toggle} disabled={!playback.duration} aria-label={playing ? "Pause" : playback.finished ? fullVideo ? "Replay full video" : "Replay selected clips" : "Play"} data-testid="button-video-play" className="grid size-9 shrink-0 place-items-center rounded-full bg-[#2f6f6d] text-[#f6efe0] transition-transform active:scale-95">
             {playing ? <Pause className="size-4" /> : <Play className="size-4 translate-x-[1px]" />}
           </button>
-          <input type="range" className="video-range min-w-0 flex-1" min={0} max={dur || 0} step={0.01} value={time} disabled={!playback.duration} aria-label="Seek in current clip" data-testid="input-video-seek"
-            aria-valuetext={`${fmt(time)} of ${fmt(dur)}`} onChange={(e) => seek(Number(e.target.value))} style={{ "--p": `${pct}%` } as CSSProperties} />
+          <input
+            type="range"
+            className="video-range min-w-0 flex-1"
+            min={0}
+            max={dur || 0}
+            step="any"
+            value={time}
+            disabled={!playback.duration}
+            aria-label="Seek video timeline"
+            data-testid="input-video-seek"
+            aria-valuetext={`${fmt(time)} of ${fmt(dur)}`}
+            onPointerDown={beginScrub}
+            onPointerUp={endScrub}
+            onPointerCancel={endScrub}
+            onLostPointerCapture={endScrub}
+            onChange={(e) => handleSliderChange(Number(e.target.value))}
+            style={{ "--p": `${pct}%` } as CSSProperties}
+          />
           {!compact && <span className="font-mono text-[10.5px] tabular-nums text-[#5f5650]" data-testid="text-video-time">{fmt(time)}/{fmt(dur)}</span>}
-          <button onClick={() => setMuted((m) => !m)} aria-pressed={muted} aria-label={muted ? "Unmute" : "Mute"} data-testid="button-video-mute" className="grid size-9 shrink-0 place-items-center rounded-full hover:bg-white/80">
+          <button onClick={() => setMuted((m) => !m)} aria-pressed={muted} aria-label={muted ? "Unmute" : "Mute"} data-testid="button-video-mute" className="grid size-9 shrink-0 place-items-center rounded-full hover:bg-white/75 transition-colors">
             {muted ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
           </button>
         </div>
-        <details className="vv-clip-context">
-          <summary>{selection.unmatched.length ? "Some passages have no scene" : selection.notes.length ? "Related illustration · see limitations" : "Illustration · caption dates unverified"}</summary>
-          <div className="vv-glass rounded-xl p-3">
-            <p>{fullVideo ? "Playing the complete supplied video, not a clip matched to this passage. " : "Clips are selected by subject. "}Several ages and dates in the supplied video conflict with the sourced article; its scenes are not documentary evidence.</p>
-            {selection.notes.map((note) => <p key={note} className="mt-2">{note}</p>)}
-          </div>
-        </details>
       </div>}
     </div>
   );

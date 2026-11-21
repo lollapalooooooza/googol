@@ -41,8 +41,23 @@ import { clipsForRegion, type ClipSelection } from "@/lib/jensen-clips";
 import { extractSelectedRegionContext } from "@/lib/region-extract";
 import { MarsViewer } from "@/components/exhibits/mars-viewer";
 import { EiffelViewer } from "@/components/exhibits/eiffel-viewer";
-import { GenieWorldViewer, type GenieWorldLaunchRequest } from "@/components/exhibits/genie-world-viewer";
-import { NewsPage } from "@/components/exhibits/news-page";
+import {
+  GenieWorldViewer,
+  type GenieStatus,
+  type GenieWorldController,
+  type GenieWorldLaunchRequest,
+} from "@/components/exhibits/genie-world-viewer";
+import {
+  MARS_GENIE_PRESETS,
+  compressImageUrlToGenieJpeg,
+  isMarsWorldContext,
+  type MarsGeniePreset,
+} from "@/lib/mars-genie-presets";
+import {
+  NewsHeaderCapsules,
+  NewsPage,
+  type NewsStreamSession,
+} from "@/components/exhibits/news-page";
 
 interface Tab { key: number; history: string[]; idx: number }
 const INITIAL = INITIAL_ARTICLES;
@@ -52,6 +67,7 @@ const entry = (t: string, hash?: string) => (hash ? `${normTitle(t)}#${hash}` : 
 
 const HELP: [string, string][] = [
   ["Ask anything", "routed to Gemini 4 Argon or Hydrogen"],
+  ["jensen news", "open a new tab & stream live sourced briefing"],
   ["genie <scene>", "generate a live Genie 4 interactive world"],
   ["open Plant cell", "open an article by title"],
   ["search beaver dam", "search Wikipedia articles"],
@@ -83,11 +99,16 @@ export default function Browser({ newsRoute = false }: { newsRoute?: boolean }) 
   const [videoSelection, setVideoSelection] = useState<ClipSelection>();
   const [eiffelExhibition, setEiffelExhibition] = useState<{ sourceRect: BoxRect; imageSrc: string } | null>(null);
   const [genieWorld, setGenieWorld] = useState<GenieWorldLaunchRequest | null>(null);
+  const [genieStatus, setGenieStatus] = useState<GenieStatus>("building");
+  const [marsLoadEpoch, setMarsLoadEpoch] = useState(0);
+  const [marsLoadBlur, setMarsLoadBlur] = useState(18);
+  const [newsStreams, setNewsStreams] = useState<Record<number, NewsStreamSession>>({});
   const [aiLoading, setAiLoading] = useState(false);
   const [aiAnswer, setAiAnswer] = useState<Gemini4Answer | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
   const areaRef = useRef<HTMLDivElement>(null);
   const addrRef = useRef<HTMLInputElement>(null);
+  const genieRef = useRef<GenieWorldController | null>(null);
   const browserWidth = useBrowserWidth();
   const viewerReturnFocus = useRef<{ element: HTMLElement | null; testid: string | null }>({ element: null, testid: null });
   const focusRun = useRef(0);
@@ -271,6 +292,9 @@ export default function Browser({ newsRoute = false }: { newsRoute?: boolean }) 
       setExternalDrag(null);
       setPortalOn(false);
       setCellOpen(false);
+      setGenieStatus("building");
+      setMarsLoadBlur(18);
+      setMarsLoadEpoch((n) => n + 1);
       setGenieWorld({
         selectedText: extracted.selectedText,
         imageAlt: extracted.imageAlt,
@@ -282,6 +306,48 @@ export default function Browser({ newsRoute = false }: { newsRoute?: boolean }) 
     },
     [portalSubject, resolvedTitle],
   );
+
+  const switchMarsPreset = useCallback(async (preset: MarsGeniePreset) => {
+    setGenieStatus("building");
+    setMarsLoadBlur(18);
+    setMarsLoadEpoch((n) => n + 1);
+    const seedJpeg = await compressImageUrlToGenieJpeg(preset.imageUrl);
+    setGenieWorld({
+      selectedText: preset.worldPrompt,
+      imageAlt: preset.ariaLabel,
+      referenceImageBase64: seedJpeg,
+      pageTitle: "Mars",
+      sourceLabel: preset.ariaLabel,
+      exactWorldPrompt: preset.worldPrompt,
+      presetId: preset.id,
+    });
+  }, []);
+
+  // Synchronize progressive unblurring on the 4 Mars preview tabs with Genie 4 loading
+  useEffect(() => {
+    if (!genieWorld) {
+      setMarsLoadBlur(18);
+      return;
+    }
+    if (genieStatus !== "building") {
+      setMarsLoadBlur(0);
+      return;
+    }
+    const start = performance.now();
+    let raf = 0;
+    const tick = (now: number) => {
+      const elapsed = now - start;
+      // Gradually sharpen from 18px -> ~6.2px while the world builds, then snap-clear to 0px once live
+      const decay = 6.2 + 11.8 * Math.exp(-elapsed / 2900);
+      const breath = 0.65 * Math.sin(elapsed / 360);
+      setMarsLoadBlur(Math.max(5.5, decay + breath));
+      raf = window.requestAnimationFrame(tick);
+    };
+    raf = window.requestAnimationFrame(tick);
+    return () => {
+      if (raf) window.cancelAnimationFrame(raf);
+    };
+  }, [genieWorld, genieStatus, marsLoadEpoch]);
 
   const revealPortal = (selection: Rect | null) => {
     if (!canSelectRegion || !selection || selection.w < 40 || selection.h < 40) return;
@@ -413,12 +479,56 @@ export default function Browser({ newsRoute = false }: { newsRoute?: boolean }) 
     }
   };
 
+  const openStreamingJensenNewsTab = (rawPrompt: string) => {
+    const useHydrogen = /^(?:@hydrogen|\/hydrogen)\b/i.test(rawPrompt);
+    const cleanPrompt =
+      rawPrompt.replace(/^(?:@(?:argon|hydrogen)|\/(?:argon|hydrogen))\s+/i, "").trim() ||
+      rawPrompt;
+    const k = ++keySeq;
+    setNewsStreams((prev) => ({
+      ...prev,
+      [k]: {
+        runId: Date.now() + k,
+        prompt: cleanPrompt,
+        model: useHydrogen ? "gemini-4-hydrogen" : "gemini-4-argon",
+        modelLabel: useHydrogen ? "Gemini 4 Hydrogen" : "Gemini 4 Argon",
+      },
+    }));
+    setAiAnswer(null);
+    setAiError(null);
+    setGenieWorld(null);
+    setMinimized(false);
+    setTabs((ts) => [...ts, { key: k, history: [NEWS_ENTRY], idx: 0 }]);
+    setActiveKey(k);
+  };
+
   const runPromptOrCommand = (rawInput: string) => {
     const raw = rawInput.trim();
     const s = raw.toLowerCase();
     if (!raw) return;
     setHelpOpen(false);
     if (s === "help" || s === "?") { setAiAnswer(null); setAiError(null); setHelpOpen(true); return; }
+
+    // "jensen news" opens a new tab and live-streams the sourced Gemini 4 briefing in < 5s
+    if (
+      /^(?:@(?:argon|hydrogen)\s+|\/(?:argon|hydrogen)\s+)?(?:(?:generate|write|show|latest|open|read)\s+)?(?:jensen(?:\s+huang)?\s+(?:news|briefing|report|article|timeline)|(?:news|briefing|report|article)\s+(?:on\s+|about\s+|for\s+)?jensen(?:\s+huang)?|黄仁勋\s*(?:新闻|最新新闻|报道|简报))$/i.test(
+        raw,
+      )
+    ) {
+      openStreamingJensenNewsTab(raw);
+      return;
+    }
+
+    if (genieWorld) {
+      if (/^(?:exit|close|close world|return|browser|返回|退出)$/.test(s)) {
+        setGenieWorld(null);
+        return;
+      }
+      const geniePrefix = raw.match(/^(?:genie|genie 4|world|生成世界|世界模型)\s+(.+)$/i);
+      genieRef.current?.steer(geniePrefix ? geniePrefix[1].trim() : raw);
+      return;
+    }
+
     if (/^(select|draw|region|select region|selection)$/.test(s)) { startSelect(); return; }
     const requestedModel = /^(3d neuron|neuron 3d|open 3d neuron)$/.test(s) ? "neuron"
       : /^(plant cell 3d|3d plant cell)$/.test(s) ? "plant-cell" : null;
@@ -525,39 +635,59 @@ export default function Browser({ newsRoute = false }: { newsRoute?: boolean }) 
     return `${names[t.key]?.entry === e ? names[t.key].title : split(e).title} — Wikipedia`;
   };
 
+  const browserHidden = minimized || Boolean(genieWorld);
+  const isNewsWindow = Boolean(active && isNews);
+
   return (
     <div className="desk relative min-h-[100dvh] h-[100dvh] w-full overflow-hidden" data-testid="desktop">
       {/* tabs outside browser */}
       <BrowserTabs tabs={tabs.map((t) => ({ key: t.key, label: tabLabel(t), empty: !t.history[t.idx], kind: tabKind(t) }))}
-        activeKey={activeKey} minimized={minimized} onSelect={(key) => { setActiveKey(key); setMinimized(false); }}
-        onClose={closeTab} onNew={() => openTab("")} />
+        activeKey={activeKey} minimized={minimized} onSelect={(key) => { setGenieWorld(null); setActiveKey(key); setMinimized(false); }}
+        onClose={closeTab} onNew={() => { setGenieWorld(null); openTab(""); }} />
       {/* browser */}
       <motion.section aria-label="Browser" id="continuum-browser-window" data-resizing={browserWidth.resizing}
+        inert={genieWorld ? true : undefined}
         style={{ left: browserWidth.bounds.x, width: browserWidth.bounds.w }}
-        initial={{ opacity: 0, y: 14 }} animate={minimized ? { opacity: 0, y: 30, scale: 0.97 } : { opacity: 1, y: 0, scale: 1 }} transition={{ duration: 0.35, ease: [0.2, 0.8, 0.2, 1] }}
-        className={`absolute top-[56px] bottom-[76px] md:top-[7.5%] md:bottom-auto md:h-[82%] rounded-[12px] flex flex-col bg-[#f4f5f7] shadow-[0_24px_60px_-24px_rgba(30,40,70,.35),0_0_0_1px_rgba(30,40,70,.08)] ${minimized ? "pointer-events-none" : ""}`}>
+        initial={{ opacity: 0, y: 14 }} animate={browserHidden ? { opacity: 0, y: minimized ? 30 : 8, scale: 0.985 } : { opacity: 1, y: 0, scale: 1 }} transition={{ duration: 0.35, ease: [0.2, 0.8, 0.2, 1] }}
+        className={`absolute top-[56px] bottom-[76px] md:top-[7.5%] md:bottom-auto md:h-[82%] rounded-[12px] flex flex-col ${isNewsWindow ? "bg-white" : "bg-[#f4f5f7]"} shadow-[0_24px_60px_-24px_rgba(30,40,70,.35),0_0_0_1px_rgba(30,40,70,.08)] ${browserHidden ? "pointer-events-none" : ""}`}>
         {browserWidth.handles}
         <div className="browser-window-content h-full min-h-0 w-full flex flex-col rounded-[12px] overflow-hidden">
-        <div className="flex items-center gap-1 px-2.5 h-[34px] bg-[#f4f5f7] shrink-0">
-          <Tb label="Back" testid="button-back" disabled={!active || active.idx === 0} onClick={() => go(-1)}><ChevronLeft className="size-4" /></Tb>
-          <Tb label="Forward" testid="button-forward" disabled={!active || active.idx >= active.history.length - 1} onClick={() => go(1)}><ChevronRight className="size-4" /></Tb>
-          <Tb label="Reload" testid="button-reload" disabled={!cur} onClick={() => setReloadTick((n) => n + 1)}><RotateCw className="size-3.5" /></Tb>
-          <AddressCapsule selecting={drawing} onCancel={() => setDrawing(false)}>
-          <form className="relative min-w-0 w-full" onSubmit={(e) => { e.preventDefault(); submitAddress(addr); }}>
-            <div className={`flex items-center gap-2 h-[24px] px-3 rounded-full bg-[#e8eaed] transition-shadow ${addrFocus ? "bg-white shadow-[0_0_0_1.5px_#9db7e8]" : ""}`}>
-              <Search className="size-3.5 text-[#5f6368] shrink-0" />
-              <input ref={addrRef} aria-label="Address" data-testid="input-address" spellCheck={false}
-                value={addrFocus ? addr : shownUrl} placeholder="Search Google or type a URL"
-                onFocus={(e) => { setAddrFocus(true); setAddr(shownUrl); requestAnimationFrame(() => e.target.select()); }}
-                onBlur={() => setTimeout(() => setAddrFocus(false), 140)} onChange={(e) => setAddr(e.target.value)}
-                className="flex-1 min-w-0 bg-transparent outline-none text-[12.5px] text-[#202124] placeholder:text-[#80868b]" />
+        {isNewsWindow ? (
+          <div className="flex items-center gap-2 px-3 h-[36px] bg-white shrink-0">
+            <div className="hidden sm:block w-[52px] shrink-0" aria-hidden />
+            <AddressCapsule selecting={drawing} onCancel={() => setDrawing(false)}>
+              <NewsHeaderCapsules
+                key={`${active.key}-${newsStreams[active.key]?.runId ?? 0}`}
+                streamSession={newsStreams[active.key]}
+              />
+            </AddressCapsule>
+            <div className="flex items-center gap-1 shrink-0">
+              <Tb label="Minimize browser" testid="button-minimize" onClick={() => setMinimized(true)}><Minus className="size-3.5" /></Tb>
+              <Tb label="Close tab" testid="button-close-current" disabled={!active} onClick={() => active && closeTab(active.key)}><X className="size-3.5" /></Tb>
             </div>
-            {addrFocus && addr !== shownUrl && <SuggestList text={addr} onPick={(t) => { navigate(t); setAddrFocus(false); addrRef.current?.blur(); }} testid="list-address-suggest" />}
-          </form>
-          </AddressCapsule>
-          <Tb label="Minimize browser" testid="button-minimize" onClick={() => setMinimized(true)}><Minus className="size-3.5" /></Tb>
-          <Tb label="Close tab" testid="button-close-current" disabled={!active} onClick={() => active && closeTab(active.key)}><X className="size-3.5" /></Tb>
-        </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1 px-2.5 h-[34px] bg-[#f4f5f7] shrink-0">
+            <Tb label="Back" testid="button-back" disabled={!active || active.idx === 0} onClick={() => go(-1)}><ChevronLeft className="size-4" /></Tb>
+            <Tb label="Forward" testid="button-forward" disabled={!active || active.idx >= active.history.length - 1} onClick={() => go(1)}><ChevronRight className="size-4" /></Tb>
+            <Tb label="Reload" testid="button-reload" disabled={!cur} onClick={() => setReloadTick((n) => n + 1)}><RotateCw className="size-3.5" /></Tb>
+            <AddressCapsule selecting={drawing} onCancel={() => setDrawing(false)}>
+            <form className="relative min-w-0 w-full" onSubmit={(e) => { e.preventDefault(); submitAddress(addr); }}>
+              <div className={`flex items-center gap-2 h-[24px] px-3 rounded-full bg-[#e8eaed] transition-shadow ${addrFocus ? "bg-white shadow-[0_0_0_1.5px_#9db7e8]" : ""}`}>
+                <Search className="size-3.5 text-[#5f6368] shrink-0" />
+                <input ref={addrRef} aria-label="Address" data-testid="input-address" spellCheck={false}
+                  value={addrFocus ? addr : shownUrl} placeholder="Search Google or type a URL"
+                  onFocus={(e) => { setAddrFocus(true); setAddr(shownUrl); requestAnimationFrame(() => e.target.select()); }}
+                  onBlur={() => setTimeout(() => setAddrFocus(false), 140)} onChange={(e) => setAddr(e.target.value)}
+                  className="flex-1 min-w-0 bg-transparent outline-none text-[12.5px] text-[#202124] placeholder:text-[#80868b]" />
+              </div>
+              {addrFocus && addr !== shownUrl && <SuggestList text={addr} onPick={(t) => { navigate(t); setAddrFocus(false); addrRef.current?.blur(); }} testid="list-address-suggest" />}
+            </form>
+            </AddressCapsule>
+            <Tb label="Minimize browser" testid="button-minimize" onClick={() => setMinimized(true)}><Minus className="size-3.5" /></Tb>
+            <Tb label="Close tab" testid="button-close-current" disabled={!active} onClick={() => active && closeTab(active.key)}><X className="size-3.5" /></Tb>
+          </div>
+        )}
 
         <div ref={areaRef} id="browser-article-panel" role={active ? "tabpanel" : "region"} aria-labelledby={active ? `header-tab-${active.key}` : undefined} aria-label={!active ? "Browser content" : undefined} className="relative flex-1 min-h-0 bg-white rounded-t-[6px] overflow-hidden">
           {!active ? (
@@ -583,7 +713,13 @@ export default function Browser({ newsRoute = false }: { newsRoute?: boolean }) 
             />
           ) : searchQuery !== null ? (
             <WikiSearchPage key={`${active.key}-${searchQuery}`} query={searchQuery} reloadTick={reloadTick} onNavigate={navigate} onSearch={search} onToggleContents={() => setContentsOpen((v) => !v)} />
-          ) : isNews ? <NewsPage key={`${active.key}-${reloadTick}`} onNavigate={navigate} /> : title ? (
+          ) : isNews ? (
+            <NewsPage
+              key={`${active.key}-${reloadTick}-${newsStreams[active.key]?.runId ?? 0}`}
+              streamSession={newsStreams[active.key]}
+              onNavigate={navigate}
+            />
+          ) : title ? (
             <WikiPage key={active.key} title={title} hash={hash} reloadTick={reloadTick} contentsOpen={contentsOpen} onToggleContents={() => setContentsOpen((v) => !v)} reader={reader}
               onNavigate={navigate} onSearch={search} onResolved={(t) => setNames((n) => (n[active.key]?.entry === cur && n[active.key]?.title === t ? n : { ...n, [active.key]: { entry: cur, title: t } }))} />
           ) : <NewTabPage key={active.key} onNavigate={navigate} onSearch={search} />}
@@ -596,7 +732,7 @@ export default function Browser({ newsRoute = false }: { newsRoute?: boolean }) 
               onClear={clearSelection} />
           )}
           <AnimatePresence>
-            {active && portalAnchor && portalOn && portalMatches && !drawing && (
+            {active && portalAnchor && portalOn && portalMatches && !drawing && !genieWorld && (
               <CellPortal key={`portal-${portalRun}-${documentIdentity}`} model={model} topic={portalSubject} anchor={portalAnchor} expanded={cellOpen}
                 videoSelection={videoSelection} onReady={() => setPortalReady(true)} onExpand={openCell} onCollapse={collapseCell} onClose={closePortal} />
             )}
@@ -605,7 +741,79 @@ export default function Browser({ newsRoute = false }: { newsRoute?: boolean }) 
         </div>
       </motion.section>
 
-      {/* Bottom Prompt Box: Gemini 4 (Argon / Hydrogen) + Morphing Audio Detection Bar + Region Select */}
+      {/* In-Place Genie 4 Interactive World Panel + Left Mars Related World Preview Tabs */}
+      <AnimatePresence>
+        {genieWorld && isMarsWorldContext(genieWorld) && (
+          <motion.nav
+            key="mars-genie-presets"
+            aria-label="Related Mars world models"
+            data-testid="rail-mars-presets"
+            data-loading={genieStatus === "building" ? "true" : "false"}
+            style={{ left: 0, width: Math.max(84, browserWidth.bounds.x) }}
+            initial={{ opacity: 0, x: -12 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -12 }}
+            transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+            className="pointer-events-none absolute top-[56px] bottom-[76px] md:top-[7.5%] md:bottom-auto md:h-[82%] z-[31] hidden sm:flex flex-col items-center justify-center gap-3 px-2.5"
+          >
+            {MARS_GENIE_PRESETS.map((preset) => {
+              const isActive = genieWorld.presetId === preset.id;
+              const isBuilding = genieStatus === "building";
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  aria-label={preset.ariaLabel}
+                  aria-pressed={isActive}
+                  data-testid={`button-mars-preset-${preset.id}`}
+                  onClick={() => void switchMarsPreset(preset)}
+                  className={`mars-topic-tab pointer-events-auto max-w-[128px] ${isBuilding ? "is-loading" : ""}`}
+                >
+                  <div className="mars-topic-media">
+                    <img
+                      src={preset.imageUrl}
+                      alt=""
+                      draggable={false}
+                      style={{
+                        filter: isBuilding ? `blur(${marsLoadBlur.toFixed(2)}px) saturate(1.08)` : "blur(0px)",
+                        transform: isBuilding
+                          ? `scale(${(1 + marsLoadBlur * 0.006).toFixed(3)})`
+                          : "scale(1)",
+                      }}
+                      className={`mars-topic-img h-full w-full object-cover ${isBuilding ? "is-loading" : ""}`}
+                    />
+                  </div>
+                </button>
+              );
+            })}
+          </motion.nav>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {genieWorld && (
+          <motion.section
+            key="genie-world-panel"
+            aria-label={`Genie 4 interactive world — ${genieWorld.sourceLabel}`}
+            data-testid="genie-world-overlay"
+            style={{ left: browserWidth.bounds.x, width: browserWidth.bounds.w }}
+            initial={{ opacity: 0, y: 12, scale: 0.985 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 10, scale: 0.985 }}
+            transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+            className="absolute top-[56px] bottom-[76px] md:top-[7.5%] md:bottom-auto md:h-[82%] z-30"
+          >
+            <GenieWorldViewer
+              ref={genieRef}
+              request={genieWorld}
+              onClose={() => setGenieWorld(null)}
+              onStatusChange={setGenieStatus}
+            />
+          </motion.section>
+        )}
+      </AnimatePresence>
+
+      {/* Bottom Prompt Box: Gemini 4 (Argon / Hydrogen) + Live Genie Steering + Audio Detection + Region Select */}
       <CommandDock
         cmd={cmd}
         setCmd={setCmd}
@@ -616,7 +824,14 @@ export default function Browser({ newsRoute = false }: { newsRoute?: boolean }) 
         setHelpOpen={setHelpOpen}
         helpEntries={HELP}
         cmdMsg={cmdMsg}
-        onFocusHint={() => !cmd && setCmdMsg("Ask Gemini 4 anything, or type help for browser commands")}
+        onFocusHint={() =>
+          !cmd &&
+          setCmdMsg(
+            genieWorld
+              ? "Type any weather, lighting, or scene change to steer the Genie 4 world live"
+              : "Ask Gemini 4 anything, type 'jensen news', or type help for browser commands",
+          )
+        }
         aiLoading={aiLoading}
         aiAnswer={aiAnswer}
         aiError={aiError}
@@ -625,6 +840,7 @@ export default function Browser({ newsRoute = false }: { newsRoute?: boolean }) 
           setAiAnswer(null);
           launchGenieFromSelection(rect, prompt);
         }}
+        worldActive={Boolean(genieWorld)}
       />
 
       {/* Eiffel Tower Archival Exhibition with CellPortal-style soft feathered blur edges (no hardcut border) */}
@@ -667,17 +883,6 @@ export default function Browser({ newsRoute = false }: { newsRoute?: boolean }) 
               </div>
             </div>
           </>,
-          document.body,
-        )}
-
-      {/* Real Genie 4 Interactive World Model Overlay (Figure 2 UI + Keyboard Controls) */}
-      {genieWorld &&
-        typeof document !== "undefined" &&
-        createPortal(
-          <GenieWorldViewer
-            request={genieWorld}
-            onClose={() => setGenieWorld(null)}
-          />,
           document.body,
         )}
     </div>

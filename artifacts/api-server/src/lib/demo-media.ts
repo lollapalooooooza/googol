@@ -1,4 +1,9 @@
 import { Storage } from "@google-cloud/storage";
+import { createReadStream, existsSync } from "node:fs";
+import { stat } from "node:fs/promises";
+import path from "node:path";
+import type { Readable } from "node:stream";
+import { fileURLToPath } from "node:url";
 
 // Replit App Storage's documented sidecar authentication; no keys in source.
 const REPLIT_SIDECAR_ENDPOINT = "http://127.0.0.1:1106";
@@ -23,12 +28,55 @@ export const DEMO_MEDIA = {
   "jensen-poster.jpg": "image/jpeg",
 } as const;
 
-export function mediaFile(asset: keyof typeof DEMO_MEDIA) {
+export type DemoMediaAsset = keyof typeof DEMO_MEDIA;
+
+export interface ReadableMediaAsset {
+  getMetadata(): Promise<readonly [{ size?: number | string }, ...unknown[]]>;
+  createReadStream(options?: { start?: number; end?: number }): Readable;
+}
+
+const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+
+export function resolveLocalMediaPath(asset: DemoMediaAsset): string | null {
+  const roots = [
+    process.cwd(),
+    path.resolve(process.cwd(), "../.."),
+    path.resolve(moduleDir, "../../../.."),
+    path.resolve(moduleDir, "../../.."),
+  ];
+  const subdirs = ["public/media", "artifacts/continuum/public/media", "generated-artifacts"];
+  for (const root of roots) {
+    for (const subdir of subdirs) {
+      const candidate = path.resolve(root, subdir, asset);
+      if (existsSync(candidate)) return candidate;
+    }
+  }
+  return null;
+}
+
+export function mediaFile(asset: DemoMediaAsset) {
   const base = process.env.PUBLIC_OBJECT_SEARCH_PATHS?.split(",")[0]?.trim();
   if (!base) throw new Error("Public App Storage is not configured");
   const [bucket, ...prefix] = base.replace(/^\/+/, "").split("/");
   if (!bucket) throw new Error("Public App Storage bucket is not configured");
   return mediaStorage.bucket(bucket).file([...prefix, "continuum-demo", asset].join("/"));
+}
+
+export function openDemoMedia(asset: DemoMediaAsset): ReadableMediaAsset {
+  const localPath = resolveLocalMediaPath(asset);
+  if (localPath) {
+    return {
+      getMetadata: async () => [{ size: (await stat(localPath)).size }],
+      createReadStream: (options) =>
+        createReadStream(
+          localPath,
+          options && options.start !== undefined && options.end !== undefined
+            ? { start: options.start, end: options.end }
+            : undefined,
+        ),
+    };
+  }
+  return mediaFile(asset);
 }
 
 /** Single-range HTTP byte serving, including suffix requests used by players. */

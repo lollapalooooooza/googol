@@ -54,3 +54,8 @@ Thumbs.db
 .cache/
 .local/
 /generated-artifacts/
+
+# Local secrets
+.env
+.env.*
+!.env.example

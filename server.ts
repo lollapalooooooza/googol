@@ -1,5 +1,18 @@
+import { existsSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import express from "express";
+
+const rootDir = import.meta.dirname ?? path.dirname(fileURLToPath(import.meta.url));
+const envPath = path.resolve(rootDir, ".env");
+if (existsSync(envPath) && typeof process.loadEnvFile === "function") {
+  try {
+    process.loadEnvFile(envPath);
+  } catch {
+    // Ignore malformed optional .env file
+  }
+}
+
 import app from "./artifacts/api-server/src/app";
 
 const port = Number(process.env.PORT || 3000);
@@ -14,7 +27,7 @@ async function start() {
         next();
         return;
       }
-      res.sendFile(path.join(publicDir, "index.html"));
+      res.sendFile("index.html", { root: publicDir });
     });
   } else {
     const { createServer } = await import("vite");
