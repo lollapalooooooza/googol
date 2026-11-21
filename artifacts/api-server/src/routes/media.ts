@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { GetDemoMediaParams } from "@workspace/api-zod";
-import { byteRange, DEMO_MEDIA, mediaFile } from "../lib/demo-media";
+import { byteRange, DEMO_MEDIA, openDemoMedia } from "../lib/demo-media";
 import { pipeMediaStream } from "../lib/pipe-media";
 
 const router: IRouter = Router();
@@ -8,7 +8,7 @@ router.get("/media/:asset", async (req, res): Promise<void> => {
   const parsed = GetDemoMediaParams.safeParse(req.params);
   if (!parsed.success) { res.status(404).json({ error: "Unknown media asset" }); return; }
   try {
-    const file = mediaFile(parsed.data.asset);
+    const file = openDemoMedia(parsed.data.asset);
     const [metadata] = await file.getMetadata();
     if (req.aborted || res.destroyed) return;
     const size = Number(metadata.size);

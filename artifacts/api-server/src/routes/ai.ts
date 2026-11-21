@@ -1,5 +1,7 @@
+import { existsSync } from "node:fs";
+import path from "node:path";
 import { Router, type IRouter } from "express";
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { buildFallbackWorldPrompt, selectGemini4Model } from "../lib/gemini-router";
 
 const router: IRouter = Router();
@@ -14,7 +16,26 @@ const ALLOWED_AUDIO_MIMES = new Set([
   "audio/x-wav",
 ]);
 
+function ensureEnvLoaded() {
+  if (process.env.GEMINI_API_KEY || process.env.API_KEY) return;
+  if (typeof process.loadEnvFile !== "function") return;
+  for (const candidate of [
+    path.resolve(process.cwd(), ".env"),
+    path.resolve(process.cwd(), "../../.env"),
+  ]) {
+    if (existsSync(candidate)) {
+      try {
+        process.loadEnvFile(candidate);
+      } catch {
+        // Ignore
+      }
+      if (process.env.GEMINI_API_KEY || process.env.API_KEY) return;
+    }
+  }
+}
+
 function getServerAi(apiVersion?: "v1beta") {
+  ensureEnvLoaded();
   const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
   if (!apiKey) {
     throw new Error("GEMINI_API_KEY is not configured on the server.");
@@ -123,6 +144,9 @@ router.post("/ai/prompt", async (req, res) => {
       model: decision.model,
       contents,
       config: {
+        ...(decision.model === "gemini-4-hydrogen"
+          ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
+          : {}),
         systemInstruction:
           decision.model === "gemini-4-argon"
             ? "You are an insightful research and engineering assistant embedded inside a browser. Respond in the same language as the user. Provide clear, structured, deeply reasoned answers (concise paragraphs or crisp bullet points, ~120–260 words unless asked for more)."
@@ -211,6 +235,7 @@ router.post("/genie/session", async (req, res) => {
       pageTitle?: unknown;
       imageAlt?: unknown;
       customPrompt?: unknown;
+      exactWorldPrompt?: unknown;
       hasReferenceImage?: unknown;
     };
 
@@ -218,59 +243,111 @@ router.post("/genie/session", async (req, res) => {
     const pageTitle = typeof body.pageTitle === "string" ? body.pageTitle.trim().slice(0, 200) : "";
     const imageAlt = typeof body.imageAlt === "string" ? body.imageAlt.trim().slice(0, 300) : "";
     const customPrompt = typeof body.customPrompt === "string" ? body.customPrompt.trim().slice(0, 800) : "";
+    const exactWorldPrompt =
+      typeof body.exactWorldPrompt === "string" ? body.exactWorldPrompt.trim().slice(0, 1800) : "";
     const hasReferenceImage = Boolean(body.hasReferenceImage);
 
-    let worldPrompt = buildFallbackWorldPrompt({
-      selectedText: customPrompt || selectedText,
-      pageTitle,
-      imageAlt,
-    });
-
-    // Enrich the world prompt with Gemini 4 Hydrogen for vivid frame-0 physical detail
-    try {
-      const promptAi = getServerAi();
-      const synth = await promptAi.models.generateContent({
-        model: "gemini-4-hydrogen",
-        contents: [
-          pageTitle ? `Page title: ${pageTitle}` : "",
-          selectedText ? `Selected text: ${selectedText}` : "",
-          imageAlt ? `Selected image description: ${imageAlt}` : "",
-          customPrompt ? `User directive: ${customPrompt}` : "",
-          hasReferenceImage ? "A 16:9 reference image from the selection is also attached." : "",
-        ]
-          .filter(Boolean)
-          .join("\n"),
-        config: {
-          systemInstruction:
-            "Write ONE concise English paragraph (55-85 words) describing an interactive, continuous first-person 3D world to explore in real time based on the provided context. Start with immediate forward motion from frame zero with no camera cuts, concrete architecture/terrain/lighting/atmosphere, and grounded physical contact Foley sounds (footsteps, wind, water, ambient environment). Never mention music, soundtrack, hum, or drone. Output only the world description text.",
-        },
+    let worldPrompt =
+      exactWorldPrompt ||
+      buildFallbackWorldPrompt({
+        selectedText: customPrompt || selectedText,
+        pageTitle,
+        imageAlt,
       });
-      if (synth.text?.trim()) {
-        worldPrompt = synth.text.trim();
+
+    const enrichPromise = exactWorldPrompt
+      ? Promise.resolve()
+      : (async () => {
+      try {
+        const promptAi = getServerAi();
+        const synth = await promptAi.models.generateContent({
+          model: "gemini-4-hydrogen",
+          contents: [
+            pageTitle ? `Page title: ${pageTitle}` : "",
+            selectedText ? `Selected text: ${selectedText}` : "",
+            imageAlt ? `Selected image description: ${imageAlt}` : "",
+            customPrompt ? `User directive: ${customPrompt}` : "",
+            hasReferenceImage ? "A 16:9 reference image from the selection is also attached." : "",
+          ]
+            .filter(Boolean)
+            .join("\n"),
+          config: {
+            thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+            systemInstruction:
+              "Write ONE concise English paragraph (55-85 words) describing an interactive, continuous first-person 3D world to explore in real time based on the provided context. Start with immediate forward motion from frame zero with no camera cuts, concrete architecture/terrain/lighting/atmosphere, and grounded physical contact Foley sounds (footsteps, wind, water, ambient environment). Never mention music, soundtrack, hum, or drone. Output only the world description text.",
+          },
+        });
+        if (synth.text?.trim()) {
+          worldPrompt = synth.text.trim();
+        }
+      } catch {
+        // Proceed with deterministic fallback world prompt if prompt enrichment is skipped
       }
-    } catch {
-      // Proceed with deterministic fallback world prompt if prompt enrichment is skipped
-    }
+    })();
 
-    const genieAi = getServerAi("v1beta");
-    const interaction = await genieAi.interactions.create({
-      model: "models/genie-4",
-      api_version: "v1beta",
-    });
+    const sessionPromise = (async () => {
+      const genieAi = getServerAi("v1beta");
+      const interaction = await genieAi.interactions.create({
+        model: "models/genie-4",
+        api_version: "v1beta",
+      });
+      const tokenResp = await genieAi.interactions.authTokens.create(interaction.id, {
+        api_version: "v1beta",
+      });
+      return { interactionId: interaction.id, authToken: tokenResp.auth_token };
+    })();
 
-    const tokenResp = await genieAi.interactions.authTokens.create(interaction.id, {
-      api_version: "v1beta",
-    });
+    const [, sessionInfo] = await Promise.all([enrichPromise, sessionPromise]);
 
     res.json({
-      interactionId: interaction.id,
-      authToken: tokenResp.auth_token,
+      interactionId: sessionInfo.interactionId,
+      authToken: sessionInfo.authToken,
       worldPrompt,
       maxDurationSec: 120,
     });
   } catch (err) {
     const { status, message } = formatApiError(err);
     res.status(status).json({ error: message });
+  }
+});
+
+/**
+ * POST /api/genie/steer
+ * Converts multilingual / shorthand live steering text into a vivid English
+ * physical scene modification directive for Genie 4 real-time world steering.
+ */
+router.post("/genie/steer", async (req, res) => {
+  try {
+    const body = (req.body ?? {}) as { directive?: unknown; worldPrompt?: unknown };
+    const directive = typeof body.directive === "string" ? body.directive.trim().slice(0, 500) : "";
+    const currentWorld = typeof body.worldPrompt === "string" ? body.worldPrompt.trim().slice(0, 600) : "";
+    if (!directive) {
+      res.status(400).json({ error: "Steering directive is required." });
+      return;
+    }
+
+    const ai = getServerAi();
+    const synth = await ai.models.generateContent({
+      model: "gemini-4-hydrogen",
+      contents: [
+        currentWorld ? `Current world: ${currentWorld}` : "",
+        `User live change request: ${directive}`,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+      config: {
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        systemInstruction:
+          "Rewrite the user's live world-change request into ONE vivid, concrete English visual/physical directive (15-35 words) describing how the interactive first-person 3D environment immediately transforms ahead of the viewer. Never mention music or camera cuts. Output only the English directive.",
+      },
+    });
+
+    res.json({
+      englishDirective: synth.text?.trim() || directive,
+    });
+  } catch {
+    const fallback = typeof req.body?.directive === "string" ? req.body.directive.trim() : "";
+    res.json({ englishDirective: fallback });
   }
 });
 

@@ -55,6 +55,7 @@ export function CommandDock({
   aiError,
   onDismissAi,
   onLaunchGenieFromPrompt,
+  worldActive = false,
 }: {
   cmd: string;
   setCmd: (value: string) => void;
@@ -71,7 +72,9 @@ export function CommandDock({
   aiError: string | null;
   onDismissAi: () => void;
   onLaunchGenieFromPrompt?: (prompt: string) => void;
+  worldActive?: boolean;
 }) {
+  const inputRef = useRef<HTMLInputElement>(null);
   const [audioMode, setAudioMode] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [audioNotice, setAudioNotice] = useState<string | null>(null);
@@ -281,6 +284,7 @@ export function CommandDock({
     const raw = cmd.trim();
     if (!raw || aiLoading) return;
     setCmd("");
+    if (worldActive) inputRef.current?.blur();
     onSubmitPrompt(raw);
   };
 
@@ -517,12 +521,22 @@ export function CommandDock({
               exit={{ opacity: 0, scale: 0.98 }}
               transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
               onSubmit={handleFormSubmit}
-              className="flex h-[38px] items-center gap-1 pl-4 pr-1.5"
+              className={`flex h-[38px] items-center gap-1.5 pr-1.5 ${worldActive ? "pl-2" : "pl-4"}`}
             >
+              {worldActive && (
+                <span
+                  data-testid="badge-world-steer"
+                  className="inline-flex h-[24px] shrink-0 items-center gap-1 rounded-full bg-[#eef4ff] px-2 text-[11px] font-medium text-[#1f54c4]"
+                >
+                  <Globe2 className="size-3" />
+                  <span>Live World</span>
+                </span>
+              )}
               <input
+                ref={inputRef}
                 value={cmd}
                 onChange={(e) => setCmd(e.target.value)}
-                placeholder="ask googol anything"
+                placeholder={worldActive ? "type to change this world in real time…" : "ask googol anything"}
                 aria-label="Command"
                 data-testid="input-command"
                 onFocus={onFocusHint}
@@ -533,9 +547,11 @@ export function CommandDock({
                   type="submit"
                   disabled={aiLoading}
                   aria-label="Submit prompt"
-                  title="Ask Gemini 4"
+                  title={worldActive ? "Steer Genie 4 world" : "Ask Gemini 4"}
                   data-testid="button-command-submit"
-                  className="grid size-7 shrink-0 place-items-center rounded-full bg-[#1d1f24] text-white transition hover:bg-[#313640] disabled:opacity-45"
+                  className={`grid size-7 shrink-0 place-items-center rounded-full text-white transition disabled:opacity-45 ${
+                    worldActive ? "bg-[#2563eb] hover:bg-[#1d4ed8]" : "bg-[#1d1f24] hover:bg-[#313640]"
+                  }`}
                 >
                   {aiLoading ? <Loader2 className="size-3.5 animate-spin" /> : <ArrowUp className="size-3.5" />}
                 </button>
@@ -551,20 +567,22 @@ export function CommandDock({
               >
                 <Mic className="size-4" />
               </button>
-              {/* Region select button */}
-              <button
-                type="button"
-                onClick={onToggleSelect}
-                aria-pressed={drawing}
-                aria-label="Select a region"
-                title="Select a region"
-                data-testid="button-select-region"
-                className={`grid size-7 shrink-0 place-items-center rounded-full transition ${
-                  drawing ? "bg-[#2f6fe0] text-white" : "text-[#5f6368] hover:bg-[#f0f2f5]"
-                }`}
-              >
-                <ScanSearch className="size-4" />
-              </button>
+              {/* Region select button (hidden when actively inside Genie 4 world) */}
+              {!worldActive && (
+                <button
+                  type="button"
+                  onClick={onToggleSelect}
+                  aria-pressed={drawing}
+                  aria-label="Select a region"
+                  title="Select a region"
+                  data-testid="button-select-region"
+                  className={`grid size-7 shrink-0 place-items-center rounded-full transition ${
+                    drawing ? "bg-[#2f6fe0] text-white" : "text-[#5f6368] hover:bg-[#f0f2f5]"
+                  }`}
+                >
+                  <ScanSearch className="size-4" />
+                </button>
+              )}
             </motion.form>
           )}
         </AnimatePresence>
