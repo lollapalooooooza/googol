@@ -54,3 +54,13 @@ Thumbs.db
 .cache/
 .local/
 /generated-artifacts/
+
+# Local secrets
+.env
+.env.*
+!.env.example
+
+# Chat upload attachments & temporary verification artifacts
+public/assets/aistudio/
+.playwright-cli/
+

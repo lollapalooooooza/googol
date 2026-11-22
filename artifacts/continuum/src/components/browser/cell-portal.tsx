@@ -34,9 +34,11 @@ function initial(a: Rect, portrait = false): Rect {
   if (x < PAD) x = a.x + a.w - pw;
   return fit({ x, y: a.y + a.h / 2 - ph / 2, w: pw, h: ph }, vw, vh);
 }
+const BOTTOM_DOCK_RESERVE = 72;
 function centered(vw: number, vh: number): Rect {
-  const w = Math.min(vw * 0.88, 1240), h = Math.min(vh * 0.84, 860);
-  return { x: (vw - w) / 2, y: (vh - h) / 2, w, h };
+  const usableH = Math.max(320, vh - BOTTOM_DOCK_RESERVE);
+  const w = Math.min(vw * 0.88, 1240), h = Math.min(usableH * 0.88, 820);
+  return { x: (vw - w) / 2, y: Math.max(16, (usableH - h) / 2), w, h };
 }
 
 export function CellPortal({ anchor, expanded, onExpand, onCollapse, onClose, onReady, model, topic, videoSelection }: {
@@ -44,9 +46,9 @@ export function CellPortal({ anchor, expanded, onExpand, onCollapse, onClose, on
   model: VisualizationId | null; topic: string; videoSelection?: ClipSelection;
 }) {
   const reduced = !!useReducedMotion();
-  const isVideo = model === "jensen-video";
+  const isVideo = model === "jensen-video" || model === "nvda-stock-video";
   const [loading, setLoading] = useState(true);
-  const [box, setBox] = useState<Rect>(() => initial(anchor, model === "jensen-video"));
+  const [box, setBox] = useState<Rect>(() => initial(anchor, isVideo));
   const [vp, setVp] = useState(vpSize);
   const [active, setActive] = useState(false);
   const [transitioning, setTransitioning] = useState(false);
@@ -57,21 +59,19 @@ export function CellPortal({ anchor, expanded, onExpand, onCollapse, onClose, on
   useEffect(() => {
     const root = portalRef.current;
     if (!expanded || !root) return;
-    // Keep the same canvas mounted through expansion, while making the
-    // centered window modal to keyboard and assistive-technology users.
-    const siblings = Array.from(document.body.children)
-      .filter((el): el is HTMLElement => el instanceof HTMLElement && el !== root && el.dataset.testid !== "scrim-portal")
-      .map((el) => ({ el, inert: el.inert }));
-    siblings.forEach(({ el }) => { el.inert = true; });
+    // Keep the same canvas mounted through expansion while allowing the bottom
+    // CommandDock to remain fully visible and interactive alongside the expanded 3D model.
     const focusInside = () => (root.querySelector<HTMLElement>("button:not([disabled])") ?? root).focus();
+    const isInsideCommandDock = (target: EventTarget | null) =>
+      target instanceof Element && Boolean(target.closest('[data-testid="command-dock"]'));
     const guardFocus = (event: FocusEvent) => {
+      if (isInsideCommandDock(event.target)) return;
       if (!root.contains(event.target as Node)) focusInside();
     };
     document.addEventListener("focusin", guardFocus);
     focusInside();
     return () => {
       document.removeEventListener("focusin", guardFocus);
-      siblings.forEach(({ el, inert }) => { el.inert = inert; });
     };
   }, [expanded]);
 
@@ -107,8 +107,10 @@ export function CellPortal({ anchor, expanded, onExpand, onCollapse, onClose, on
     const root = portalRef.current;
     if (!expanded || transitioning || !root) return;
     // During expansion only the container is available. Move focus into the
-    // controls once they mount, without interrupting focus already inside.
-    if (document.activeElement === root || !root.contains(document.activeElement)) {
+    // controls once they mount, without interrupting focus already inside or in CommandDock.
+    const activeEl = document.activeElement;
+    if (activeEl instanceof Element && activeEl.closest('[data-testid="command-dock"]')) return;
+    if (activeEl === root || !root.contains(activeEl)) {
       (root.querySelector<HTMLElement>("button:not([disabled])") ?? root).focus();
     }
   }, [expanded, transitioning]);
@@ -170,7 +172,7 @@ export function CellPortal({ anchor, expanded, onExpand, onCollapse, onClose, on
         exit={{ opacity: 0, transition: { duration: 0.15 } }} transition={transition}
         data-testid="portal-cell" role={expanded ? "dialog" : "region"} aria-modal={expanded || undefined}
         data-motion={transitioning ? "transitioning" : "settled"}
-        aria-label={`${model ? VISUALIZATION_INFO[model].title : topic} ${model === "jensen-video" ? "video" : "3D"} preview`} data-model={model ?? "unavailable"}
+        aria-label={`${model ? VISUALIZATION_INFO[model].title : topic} ${isVideo ? "video" : "3D"} preview`} data-model={model ?? "unavailable"}
         aria-busy={loading} data-state={loading ? "loading" : expanded ? "expanded" : "ready"}>
         {!isVideo && <motion.div aria-hidden className="absolute pointer-events-none backdrop-blur-[10px] -inset-5 rounded-[40%] feather-ring"
           initial={false} animate={{ opacity: expanded ? 0 : 1 }} transition={transition} />
@@ -193,6 +195,8 @@ export function CellPortal({ anchor, expanded, onExpand, onCollapse, onClose, on
             ? <EiffelViewer compact={!expanded} transitioning={transitioning} actions={actions} />
             : model === "jensen-video"
             ? <VideoViewer compact={!expanded} transitioning={transitioning} playWhenReady={!loading} selection={videoSelection} src={EXHIBIT_MEDIA.video} poster={EXHIBIT_MEDIA.poster} actions={actions} />
+            : model === "nvda-stock-video"
+            ? <VideoViewer compact={!expanded} transitioning={transitioning} playWhenReady={!loading} selection={videoSelection} src={EXHIBIT_MEDIA.nvdaStockVideo} actions={actions} />
             : model ? <CellViewer key={model} model={model} compact={!expanded} transitioning={transitioning} feathered actions={actions} />
             : <ModelUnavailable topic={topic} compact={!expanded} actions={actions} />}
           </motion.div>

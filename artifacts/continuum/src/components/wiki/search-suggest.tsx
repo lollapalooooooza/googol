@@ -16,7 +16,7 @@ export function useWikiSuggestions(text: string, enabled = true) {
   return {
     ...result,
     // Never offer results for the previous query during the debounce interval.
-    data: current ? result.data : undefined,
+    data: current && Array.isArray(result.data) ? result.data : undefined,
     isFetching: input.length > 0 && (q !== input || (on && result.isFetching)),
     isError: current && result.isError,
   };

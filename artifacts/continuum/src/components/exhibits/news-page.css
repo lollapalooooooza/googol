@@ -1,6 +1,24 @@
-@import url('https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&display=swap');
 .news-page{background:#fff;color:#121212;color-scheme:light}
-.np-article{max-width:640px;margin:0 auto;padding:44px 24px 72px}
+.np-article{max-width:640px;margin:0 auto;padding:28px 24px 72px}
+.np-header-capsules{display:flex;align-items:center;justify-content:center;gap:6px;min-width:0;overflow-x:auto;scrollbar-width:none}
+.np-header-capsules::-webkit-scrollbar{display:none}
+.np-model-pill{position:relative;overflow:hidden;display:inline-flex;align-items:center;height:24px;padding:0 10px;border-radius:999px;font-family:'Libre Franklin',system-ui,sans-serif;font-size:11.5px;font-weight:500;letter-spacing:.01em;font-variant-numeric:tabular-nums;white-space:nowrap;flex-shrink:0}
+.np-model-pill-inner{position:relative;z-index:1;display:inline-flex;align-items:center;gap:5px}
+.np-model-progress{position:absolute;inset:0;z-index:0;transform-origin:left center;background:linear-gradient(90deg,rgba(47,111,224,.06),rgba(47,111,224,.15));pointer-events:none;will-change:transform}
+.np-model-pill.is-argon{background:#f2f3f6;color:#1a1d24;border:1px solid #e2e5ec}
+.np-model-pill.is-hydrogen{background:#ecf3ff;color:#1850b8;border:1px solid #d1e2fd}
+.np-live-dot{position:relative;width:6px;height:6px;border-radius:50%;background:#2f6fe0;box-shadow:0 0 0 2px rgba(47,111,224,.18);animation:np-pulse 1.35s cubic-bezier(.4,0,.2,1) infinite;flex-shrink:0}
+.np-pill-mid-dot{opacity:.45;margin:0 -1px}
+.np-timer{display:inline-flex;align-items:center;font-variant-numeric:tabular-nums;font-feature-settings:'tnum' 1;color:#2f6fe0;font-weight:600;line-height:1.25em}
+.np-digit-window{position:relative;display:inline-block;height:1.25em;width:0.68em;overflow:hidden;vertical-align:top;-webkit-mask-image:linear-gradient(to bottom,transparent 0%,#000 18%,#000 82%,transparent 100%);mask-image:linear-gradient(to bottom,transparent 0%,#000 18%,#000 82%,transparent 100%)}
+.np-digit-track{display:flex;flex-direction:column;will-change:transform}
+.np-digit-cell{display:block;height:1.25em;line-height:1.25em;text-align:center}
+.np-timer-dot{display:inline-block;width:0.32em;text-align:center;line-height:1.25em}
+.np-timer-unit{display:inline-block;margin-left:0.06em;opacity:.85;line-height:1.25em}
+.np-header-sep{width:3px;height:3px;border-radius:50%;background:#c8cdd6;flex-shrink:0;margin:0 1px}
+.np-source-pill{display:inline-flex;align-items:center;gap:3.5px;height:24px;padding:0 9px;border-radius:999px;background:#f6f7f9;border:1px solid #e4e7ee;font-family:'Libre Franklin',system-ui,sans-serif;font-size:11px;font-weight:500;color:#3c4352;text-decoration:none;white-space:nowrap;flex-shrink:0;transition:background-color .15s ease,border-color .15s ease,color .15s ease,opacity .2s ease}
+.np-source-pill:hover{background:#edf3ff;border-color:#bfd3f8;color:#1849a9}
 .np-kicker{font-family:'Libre Franklin',system-ui,sans-serif;font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#5a5a5a;padding-bottom:10px;border-bottom:1px solid #121212}
 .np-kicker span{margin:0 .5em;color:#bbb}
 .np-h1{font-family:'Source Serif 4',Georgia,'Times New Roman',serif;font-weight:700;font-size:clamp(28px,4.4vw,40px);line-height:1.12;letter-spacing:-.01em;margin-top:22px;color:#121212}
@@ -21,13 +39,16 @@
 .np-h2{font-family:'Libre Franklin',system-ui,sans-serif;font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#121212;padding-top:14px;border-top:1px solid #e2e2e2}
 .np-link{color:#326891;text-decoration:underline;text-decoration-color:#b8cbdb;text-underline-offset:3px;font:inherit;cursor:pointer}
 .np-link:hover{text-decoration-color:#326891}
-.np-cite{margin-left:6px;font-family:'Libre Franklin',system-ui,sans-serif;font-size:10.5px;font-weight:500;letter-spacing:.04em;color:#326891;vertical-align:super;line-height:0;text-decoration:none}
-.np-cite:hover{text-decoration:underline}
+.np-cite{display:inline-flex;align-items:center;gap:2px;margin-left:5px;padding:1px 7px;border-radius:999px;background:#f2f5fa;border:1px solid #dfe6f2;font-family:'Libre Franklin',system-ui,sans-serif;font-size:10.5px;font-weight:600;letter-spacing:.02em;color:#28559a;vertical-align:middle;line-height:1.45;text-decoration:none;transition:background-color .15s ease,border-color .15s ease}
+.np-cite:hover{background:#e3edff;border-color:#b7cef5;text-decoration:none}
+.np-stream-cursor{display:inline-block;width:7px;height:1.05em;margin-left:3px;vertical-align:-2px;border-radius:2px;background:#2f6fe0;animation:np-blink .75s steps(2,start) infinite}
 .np-article .np-note{margin-top:40px;font-family:'Libre Franklin',system-ui,sans-serif;font-size:13px;line-height:1.55;color:#666;font-style:normal;padding-left:12px;border-left:2px solid #d6d6d6}
 .np-sources{margin-top:36px;padding-top:12px;border-top:1px solid #121212;font-family:'Libre Franklin',system-ui,sans-serif}
 .np-sources-label{font-size:11px!important;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#5a5a5a!important;font-family:'Libre Franklin',system-ui,sans-serif!important}
 .np-sources ol{margin-top:8px;list-style:decimal;padding-left:18px;font-size:13px;line-height:1.7;color:#5a5a5a}
 .np-sources a{color:#326891;text-decoration:none}
 .np-sources a:hover{text-decoration:underline}
-.np-link:focus-visible,.np-cite:focus-visible,.np-sources a:focus-visible{outline:2px solid #326891;outline-offset:2px;border-radius:2px}
-@media(max-width:600px){.np-article{padding:28px 18px 56px}.np-section p,.np-lede{font-size:17px}.np-dek{font-size:17px}.np-timeline-item{grid-template-columns:1fr;gap:8px}.np-timeline-date{padding-top:0}}
+.np-link:focus-visible,.np-cite:focus-visible,.np-source-pill:focus-visible,.np-sources a:focus-visible{outline:2px solid #326891;outline-offset:2px;border-radius:999px}
+@keyframes np-blink{0%,100%{opacity:1}50%{opacity:.15}}
+@keyframes np-pulse{0%,100%{transform:scale(.9);opacity:.55}50%{transform:scale(1.18);opacity:1}}
+@media(max-width:600px){.np-article{padding:20px 18px 56px}.np-section p,.np-lede{font-size:17px}.np-dek{font-size:17px}.np-timeline-item{grid-template-columns:1fr;gap:8px}.np-timeline-date{padding-top:0}}

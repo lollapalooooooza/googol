@@ -51,6 +51,7 @@ export function ChromeSearchPage({
   onOpenStandalone,
   onStartMarquee,
   onOpenPortalCenter,
+  onGoHome,
 }: {
   query: string;
   reloadTick: number;
@@ -59,6 +60,7 @@ export function ChromeSearchPage({
   onOpenStandalone: (model: VisualizationId) => void;
   onStartMarquee?: (start: { startX: number; startY: number; curX: number; curY: number }) => void;
   onOpenPortalCenter?: (rectEl: HTMLElement) => void;
+  onGoHome?: () => void;
 }) {
   const intent = normalizeSearchIntent(query);
   const curated = getCuratedChromeContent(intent);
@@ -97,8 +99,9 @@ export function ChromeSearchPage({
   const seenWikiTitles = new Set(
     curated.results.map((r) => r.wikiTitle?.toLowerCase()).filter(Boolean),
   );
-  const liveResults: ChromeWebResult[] = (wikiResultsQuery.data ?? [])
-    .filter((w) => !seenWikiTitles.has(w.title.toLowerCase()))
+  const rawWikiResults = Array.isArray(wikiResultsQuery.data) ? wikiResultsQuery.data : [];
+  const liveResults: ChromeWebResult[] = rawWikiResults
+    .filter((w) => w && typeof w.title === "string" && !seenWikiTitles.has(w.title.toLowerCase()))
     .slice(0, 6)
     .map((w, i) => ({
       id: `wiki-live-${i}-${w.title}`,
@@ -222,16 +225,16 @@ export function ChromeSearchPage({
         <div className="mx-auto flex max-w-[1220px] items-center gap-4 px-4 sm:px-7">
           <button
             type="button"
-            onClick={() => onChromeSearch("eiffel tower")}
-            aria-label="Google Search home"
+            onClick={() => (onGoHome ? onGoHome() : onChromeSearch("eiffel tower"))}
+            aria-label="googol Search home"
             className="shrink-0 select-none font-sans text-[28px] font-medium tracking-[-0.04em] leading-none"
           >
-            <span className="text-[#4285F4]">G</span>
+            <span className="text-[#4285F4]">g</span>
             <span className="text-[#EA4335]">o</span>
             <span className="text-[#FBBC05]">o</span>
             <span className="text-[#4285F4]">g</span>
-            <span className="text-[#34A853]">l</span>
-            <span className="text-[#EA4335]">e</span>
+            <span className="text-[#34A853]">o</span>
+            <span className="text-[#EA4335]">l</span>
           </button>
 
           <form

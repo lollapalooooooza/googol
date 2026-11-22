@@ -147,12 +147,12 @@ export const EIFFEL_ELEVATION_PLATE_SRC = thumbUrl("55_elevation_plate.jpg");
  */
 export const EIFFEL_PLATE_ASPECT = 736 / 1400;
 
-export function computeCenteredPlateRect(vw: number, vh: number): BoxRect {
+export function computeCenteredPlateRect(vw: number, vh: number, extraBottomReserve = 0): BoxRect {
   const safeW = Math.max(320, vw);
   const safeH = Math.max(400, vh);
-  const bottomBarReserve = 96;
-  const topMargin = 28;
-  const usableH = Math.max(220, safeH - bottomBarReserve - topMargin);
+  const bottomBarReserve = 96 + Math.max(0, extraBottomReserve);
+  const topMargin = 26;
+  const usableH = Math.max(200, safeH - bottomBarReserve - topMargin);
   let h = Math.min(usableH * 0.92, 740);
   let w = h * EIFFEL_PLATE_ASPECT;
   const maxW = safeW * 0.44;
@@ -380,20 +380,46 @@ export function getCuratedChromeContent(intent: SearchIntent): {
     };
   }
 
-  if (intent.matchedExhibit === "plant-cell" || intent.matchedExhibit === "neuron") {
-    const title = intent.matchedExhibit === "plant-cell" ? "Plant cell" : "Neuron";
+  if (intent.matchedExhibit === "plant-cell") {
     return {
       knowledge: null,
       images: [],
       results: [
         {
-          id: `res-${intent.matchedExhibit}-wiki`,
-          title: `${title} - Wikipedia`,
-          displayUrl: `https://en.wikipedia.org › wiki › ${title.replace(/ /g, "_")}`,
+          id: "res-plant-cell-wiki",
+          title: "Plant cell - Wikipedia",
+          displayUrl: "https://en.wikipedia.org › wiki › Plant_cell",
           siteName: "Wikipedia",
-          snippet: `Read the full English Wikipedia article on ${title}, or select any region on the page to open its interactive 3D cutaway model.`,
-          wikiTitle: title,
-          sitelinks: [{ label: `Open 3D ${title}`, viewModel: intent.matchedExhibit }],
+          snippet:
+            "Plant cells are the cells present in green plants, photosynthetic eukaryotes of the kingdom Plantae. Their distinctive features include primary cell walls containing cellulose, plastids such as chloroplasts for photosynthesis, and a large central vacuole that regulates turgor pressure.",
+          wikiTitle: "Plant cell",
+          sitelinks: [
+            { label: "Structure", wikiTitle: "Plant cell#Structure" },
+            { label: "Types of plant cells and tissues", wikiTitle: "Plant cell#Types_of_plant_cells_and_tissues" },
+            { label: "Open 3D Plant cell", viewModel: "plant-cell" },
+          ],
+        },
+      ],
+    };
+  }
+
+  if (intent.matchedExhibit === "neuron") {
+    return {
+      knowledge: null,
+      images: [],
+      results: [
+        {
+          id: "res-neuron-wiki",
+          title: "Neuron - Wikipedia",
+          displayUrl: "https://en.wikipedia.org › wiki › Neuron",
+          siteName: "Wikipedia",
+          snippet:
+            "A neuron, neurone, or nerve cell is an excitable cell that fires electric signals called action potentials across a neural network in the nervous system.",
+          wikiTitle: "Neuron",
+          sitelinks: [
+            { label: "Anatomy and histology", wikiTitle: "Neuron#Anatomy_and_histology" },
+            { label: "Open 3D Neuron", viewModel: "neuron" },
+          ],
         },
       ],
     };

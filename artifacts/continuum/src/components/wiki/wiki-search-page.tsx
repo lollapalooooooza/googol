@@ -33,7 +33,7 @@ export function WikiSearchPage({ query, reloadTick, onNavigate, onSearch, onTogg
               <p>{result.error?.status === 429 ? "Wikipedia is temporarily limiting requests. Please try again shortly." : "Wikipedia search could not be reached. No results have been substituted."}</p>
               <button type="button" onClick={() => void result.refetch()} className="mt-3 inline-flex items-center gap-1.5 px-3 h-8 border border-[#a2a9b1] bg-[#f8f9fa] rounded-sm text-[13px]" data-testid="button-retry-search"><RotateCw className="size-3.5" />Try again</button>
             </div>
-          ) : !result.data ? (
+          ) : !Array.isArray(result.data) ? (
             <p className="mt-5 text-[14px] text-[#54595d]" role="status" data-testid="status-search-loading">Searching Wikipedia…</p>
           ) : result.data.length === 0 ? (
             <div className="mt-5 text-[14px]" data-testid="status-search-empty">

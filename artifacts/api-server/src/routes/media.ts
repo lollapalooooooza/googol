@@ -1,21 +1,20 @@
 import { Router, type IRouter } from "express";
-import { GetDemoMediaParams } from "@workspace/api-zod";
-import { byteRange, DEMO_MEDIA, mediaFile } from "../lib/demo-media";
+import { byteRange, DEMO_MEDIA, isDemoMediaAsset, openDemoMedia } from "../lib/demo-media";
 import { pipeMediaStream } from "../lib/pipe-media";
 
 const router: IRouter = Router();
 router.get("/media/:asset", async (req, res): Promise<void> => {
-  const parsed = GetDemoMediaParams.safeParse(req.params);
-  if (!parsed.success) { res.status(404).json({ error: "Unknown media asset" }); return; }
+  const asset = typeof req.params.asset === "string" ? req.params.asset : "";
+  if (!isDemoMediaAsset(asset)) { res.status(404).json({ error: "Unknown media asset" }); return; }
   try {
-    const file = mediaFile(parsed.data.asset);
+    const file = openDemoMedia(asset);
     const [metadata] = await file.getMetadata();
     if (req.aborted || res.destroyed) return;
     const size = Number(metadata.size);
     if (!Number.isSafeInteger(size) || size <= 0) throw new Error("Asset has invalid size");
     const range = byteRange(req.headers.range, size);
     res.set({
-      "Accept-Ranges": "bytes", "Content-Type": DEMO_MEDIA[parsed.data.asset],
+      "Accept-Ranges": "bytes", "Content-Type": DEMO_MEDIA[asset],
       "Cache-Control": "public, max-age=3600", "X-Content-Type-Options": "nosniff",
     });
     if (range === false) { res.set("Content-Range", `bytes */${size}`); res.status(416).end(); return; }

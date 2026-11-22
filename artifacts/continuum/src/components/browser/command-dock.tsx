@@ -10,6 +10,7 @@ import {
   Square,
   X,
 } from "lucide-react";
+import { MarkdownContent } from "./markdown-content";
 
 export interface Gemini4Answer {
   prompt: string;
@@ -49,12 +50,13 @@ export function CommandDock({
   setHelpOpen,
   helpEntries,
   cmdMsg,
-  onFocusHint,
   aiLoading,
   aiAnswer,
   aiError,
   onDismissAi,
   onLaunchGenieFromPrompt,
+  centered = false,
+  worldActive = false,
 }: {
   cmd: string;
   setCmd: (value: string) => void;
@@ -65,12 +67,13 @@ export function CommandDock({
   setHelpOpen: (open: boolean) => void;
   helpEntries: [string, string][];
   cmdMsg: string | null;
-  onFocusHint: () => void;
   aiLoading: boolean;
   aiAnswer: Gemini4Answer | null;
   aiError: string | null;
   onDismissAi: () => void;
   onLaunchGenieFromPrompt?: (prompt: string) => void;
+  centered?: boolean;
+  worldActive?: boolean;
 }) {
   const [audioMode, setAudioMode] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
@@ -87,6 +90,13 @@ export function CommandDock({
   const analyserRef = useRef<AnalyserNode | null>(null);
   const rafRef = useRef<number | null>(null);
   const micLiveRef = useRef(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!centered || audioMode) return;
+    const id = window.setTimeout(() => inputRef.current?.focus(), 120);
+    return () => window.clearTimeout(id);
+  }, [centered, audioMode]);
 
   const teardownAudio = useCallback(() => {
     if (rafRef.current !== null) {
@@ -266,7 +276,7 @@ export function CommandDock({
         return;
       }
 
-      setCmd(transcript);
+      setCmd("");
       onSubmitPrompt(transcript);
     } catch (err) {
       teardownAudio();
@@ -281,17 +291,53 @@ export function CommandDock({
     const raw = cmd.trim();
     if (!raw || aiLoading) return;
     setCmd("");
+    if (worldActive) inputRef.current?.blur();
     onSubmitPrompt(raw);
   };
 
   const statusLine = audioNotice || cmdMsg;
 
   return (
-    <div
-      className="absolute bottom-[14px] left-1/2 z-40 w-[min(92vw,max(340px,31vw))] -translate-x-1/2"
-      data-testid="command-dock"
-      data-mode={audioMode ? "audio" : "text"}
-    >
+    <div className="pointer-events-none absolute inset-0 z-[70]">
+      {/* Centered Homescreen googol logo positioned cleanly above the centered prompt box */}
+      <AnimatePresence>
+        {centered && (
+          <motion.div
+            key="homescreen-logo"
+            initial={{ opacity: 0, y: 12, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -26, scale: 0.94 }}
+            transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
+            className="pointer-events-none absolute inset-x-0 top-[calc(46%-96px)] flex justify-center select-none"
+            data-testid="homescreen-logo"
+          >
+            <h1
+              aria-label="googol"
+              className="font-sans text-[62px] sm:text-[76px] font-medium tracking-[-0.045em] leading-none drop-shadow-[0_2px_10px_rgba(30,40,70,0.06)]"
+            >
+              <span className="text-[#4285F4]">g</span>
+              <span className="text-[#EA4335]">o</span>
+              <span className="text-[#FBBC05]">o</span>
+              <span className="text-[#4285F4]">g</span>
+              <span className="text-[#34A853]">o</span>
+              <span className="text-[#EA4335]">l</span>
+            </h1>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <motion.div
+        layout
+        transition={{ duration: 0.56, ease: [0.22, 1, 0.36, 1] }}
+        className={
+          centered
+            ? "pointer-events-auto absolute inset-x-0 top-[46%] mx-auto w-[min(92vw,540px)]"
+            : "pointer-events-auto absolute inset-x-0 bottom-[14px] mx-auto w-[min(92vw,max(340px,31vw))]"
+        }
+        data-testid="command-dock"
+        data-mode={audioMode ? "audio" : "text"}
+        data-position={centered ? "center" : "bottom"}
+      >
       {/* Floating Gemini 4 Response Card (Argon / Hydrogen) */}
       <AnimatePresence>
         {(aiLoading || aiAnswer || aiError) && (
@@ -358,9 +404,7 @@ export function CommandDock({
                 </p>
               ) : aiAnswer ? (
                 <>
-                  <p className="whitespace-pre-wrap" data-testid="text-ai-answer">
-                    {aiAnswer.answer}
-                  </p>
+                  <MarkdownContent content={aiAnswer.answer} testid="text-ai-answer" />
                   {onLaunchGenieFromPrompt && (
                     <div className="mt-3 flex items-center justify-end border-t border-[#eff1f5] pt-2.5">
                       <button
@@ -517,54 +561,95 @@ export function CommandDock({
               exit={{ opacity: 0, scale: 0.98 }}
               transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
               onSubmit={handleFormSubmit}
-              className="flex h-[38px] items-center gap-1 pl-4 pr-1.5"
+              className={`flex items-center gap-1.5 pr-1.5 transition-[height] duration-300 ${
+                centered ? "h-[46px] pl-4" : worldActive ? "h-[38px] pl-2" : "h-[38px] pl-4"
+              }`}
             >
+              {!centered && worldActive && (
+                <span
+                  data-testid="badge-world-steer"
+                  className="inline-flex h-[24px] shrink-0 items-center gap-1 rounded-full bg-[#eef4ff] px-2 text-[11px] font-medium text-[#1f54c4]"
+                >
+                  <Globe2 className="size-3" />
+                  <span>Live World</span>
+                </span>
+              )}
               <input
+                ref={inputRef}
                 value={cmd}
                 onChange={(e) => setCmd(e.target.value)}
-                placeholder="ask googol anything"
+                placeholder={
+                  worldActive ? "type to change this world in real time…" : "ask googol anything"
+                }
                 aria-label="Command"
                 data-testid="input-command"
-                onFocus={onFocusHint}
-                className="min-w-0 flex-1 bg-transparent text-[13.5px] text-[#1d1f24] outline-none placeholder:text-[#9aa0a6]"
+                autoFocus={centered}
+                className={`min-w-0 flex-1 bg-transparent text-[#1d1f24] outline-none placeholder:text-[#9aa0a6] ${
+                  centered ? "text-[15px]" : "text-[13.5px]"
+                }`}
               />
-              {cmd.trim().length > 0 && (
+              {!centered && cmd.trim().length > 0 && (
                 <button
                   type="submit"
                   disabled={aiLoading}
                   aria-label="Submit prompt"
-                  title="Ask Gemini 4"
+                  title={worldActive ? "Steer Genie 4 world" : "Ask Gemini 4"}
                   data-testid="button-command-submit"
-                  className="grid size-7 shrink-0 place-items-center rounded-full bg-[#1d1f24] text-white transition hover:bg-[#313640] disabled:opacity-45"
+                  className={`grid size-7 shrink-0 place-items-center rounded-full text-white transition disabled:opacity-45 ${
+                    worldActive
+                      ? "bg-[#2563eb] hover:bg-[#1d4ed8]"
+                      : "bg-[#1d1f24] hover:bg-[#313640]"
+                  }`}
                 >
                   {aiLoading ? <Loader2 className="size-3.5 animate-spin" /> : <ArrowUp className="size-3.5" />}
                 </button>
               )}
-              {/* Microphone icon button directly to the LEFT of region-select button */}
+              {/* Microphone icon button (dictate) */}
               <button
                 type="button"
                 onClick={() => void startAudioDetection()}
                 aria-label="Start voice input"
                 title="Voice input (audio detection)"
                 data-testid="button-voice-record"
-                className="grid size-7 shrink-0 place-items-center rounded-full text-[#5f6368] transition hover:bg-[#f0f2f5] hover:text-[#1d1f24]"
+                className={`grid shrink-0 place-items-center rounded-full text-[#5f6368] transition hover:bg-[#f0f2f5] hover:text-[#1d1f24] ${
+                  centered ? "size-8" : "size-7"
+                }`}
               >
                 <Mic className="size-4" />
               </button>
-              {/* Region select button */}
-              <button
-                type="button"
-                onClick={onToggleSelect}
-                aria-pressed={drawing}
-                aria-label="Select a region"
-                title="Select a region"
-                data-testid="button-select-region"
-                className={`grid size-7 shrink-0 place-items-center rounded-full transition ${
-                  drawing ? "bg-[#2f6fe0] text-white" : "text-[#5f6368] hover:bg-[#f0f2f5]"
-                }`}
-              >
-                <ScanSearch className="size-4" />
-              </button>
+              {/* Homescreen send button positioned cleanly to the RIGHT of dictate */}
+              {centered && (
+                <button
+                  type="submit"
+                  disabled={aiLoading || cmd.trim().length === 0}
+                  aria-label="Submit prompt"
+                  title="Search with googol"
+                  data-testid="button-command-submit"
+                  className={`grid size-8 shrink-0 place-items-center rounded-full transition-colors duration-200 ${
+                    cmd.trim().length > 0
+                      ? "bg-[#1d1f24] text-white hover:bg-[#313640] cursor-pointer"
+                      : "bg-[#eef0f4] text-[#9aa0a6] cursor-default"
+                  } disabled:opacity-75`}
+                >
+                  {aiLoading ? <Loader2 className="size-3.5 animate-spin" /> : <ArrowUp className="size-4" />}
+                </button>
+              )}
+              {/* Region select button (shown once browser is open and not inside Genie 4 world) */}
+              {!centered && !worldActive && (
+                <button
+                  type="button"
+                  onClick={onToggleSelect}
+                  aria-pressed={drawing}
+                  aria-label="Select a region"
+                  title="Select a region"
+                  data-testid="button-select-region"
+                  className={`grid size-7 shrink-0 place-items-center rounded-full transition ${
+                    drawing ? "bg-[#2f6fe0] text-white" : "text-[#5f6368] hover:bg-[#f0f2f5]"
+                  }`}
+                >
+                  <ScanSearch className="size-4" />
+                </button>
+              )}
             </motion.form>
           )}
         </AnimatePresence>
@@ -587,6 +672,7 @@ export function CommandDock({
           </motion.div>
         )}
       </AnimatePresence>
+      </motion.div>
     </div>
   );
 }

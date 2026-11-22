@@ -77,11 +77,12 @@ export function compressImageToGenieJpeg(img: HTMLImageElement): string | null {
     }
     ctx.drawImage(img, sx, sy, sw, sh, 0, 0, targetW, targetH);
 
-    for (const quality of [0.72, 0.56, 0.42]) {
+    for (const quality of [0.68, 0.52, 0.38, 0.28]) {
       const dataUrl = canvas.toDataURL("image/jpeg", quality);
       const base64 = dataUrl.split(",")[1] ?? "";
-      // Base64 length * 0.75 approximates raw byte length; keep safely under 44 KB
-      if (base64 && base64.length * 0.75 < 44_000) {
+      // Keep the encoded base64 string well under 36 KB so the full JSON
+      // `world_setup` frame stays safely inside WebRTC SCTP limits (< 64 KB).
+      if (base64 && base64.length < 36_000) {
         return base64;
       }
     }
